@@ -2,6 +2,53 @@ import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 
 const initialPrompt = "Why do you want to cancel?";
 
+const extractQuestion = (text) => {
+  if (!text) return null;
+
+  const segments = text
+    .split(/[\r\n]+/)
+    .flatMap((segment) => segment.split(/(?<=\?)/))
+    .map((segment) => segment.trim())
+    .filter(Boolean);
+
+  for (const segment of segments) {
+    const questionIndex = segment.indexOf("?");
+    if (questionIndex === -1) continue;
+    const candidate = segment.slice(0, questionIndex + 1).trim();
+    if (candidate && candidate.length <= 120) {
+      return candidate;
+    }
+  }
+
+  return null;
+};
+
+const shortenForContext = (text, maxLength = 45) => {
+  if (!text) return "";
+  const cleaned = text.replace(/["“”]+/g, "").trim();
+  if (cleaned.length <= maxLength) {
+    return cleaned;
+  }
+
+  const truncated = cleaned.slice(0, maxLength);
+  const withoutDanglingWord = truncated.replace(/\s+\S*$/, "").trim();
+  return withoutDanglingWord || truncated.trim();
+};
+
+const createFollowUpQuestion = (userText, generatedText) => {
+  const question = extractQuestion(generatedText);
+  if (question) {
+    return question;
+  }
+
+  const snippet = shortenForContext(userText);
+  if (snippet) {
+    return `Could you tell me more about "${snippet}"?`;
+  }
+
+  return "Could you tell me a bit more?";
+};
+
 export default function App() {
   const [messages, setMessages] = useState([{ role: "agent", text: initialPrompt }]);
   const [input, setInput] = useState("");
@@ -50,8 +97,8 @@ export default function App() {
         });
         const generated = output[0]?.generated_text ?? "";
         const completion = generated.slice(prompt.length).trim();
-        const cleaned = completion || "I understand. Could you tell me more?";
-        setMessages((current) => [...current, { role: "agent", text: cleaned }]);
+        const followUp = createFollowUpQuestion(trimmed, completion);
+        setMessages((current) => [...current, { role: "agent", text: followUp }]);
       } catch (error) {
         console.error(error);
         setMessages((current) => [
