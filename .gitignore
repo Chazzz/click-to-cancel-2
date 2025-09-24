@@ -1,13 +1,8 @@
 node_modules
 .dist
-.expo
-.expo-shared
+.DS_Store
 npm-debug.log*
 yarn-debug.log*
 yarn-error.log*
-web-build
-web-report
-.DS_Store
-*.local
-.env*
-expo-env.d.ts
+pnpm-debug.log*
+dist
