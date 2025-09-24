@@ -1,0 +1,14 @@
+{
+  "expo": {
+    "name": "ClickToCancel",
+    "slug": "click-to-cancel-2",
+    "version": "1.0.0",
+    "orientation": "portrait",
+    "platforms": ["ios", "android", "web"],
+    "assetBundlePatterns": ["**/*"],
+    "web": {
+      "bundler": "metro",
+      "output": "static"
+    }
+  }
+}
