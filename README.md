@@ -1,6 +1,6 @@
 # Click to Cancel Assistant
 
-This project is an Expo-managed React Native application that targets the web and can be deployed to Vercel. It provides a cancellation assistant chat experience powered by the DistilGPT-2 model running directly in the browser via [`@xenova/transformers`](https://github.com/xenova/transformers.js).
+This project is a lightweight React application built with Vite that simulates a cancellation assistant conversation. It runs fully in the browser and streams responses generated with the [`@xenova/transformers`](https://github.com/xenova/transformers.js) implementation of DistilGPT-2.
 
 ## Getting Started
 
@@ -10,18 +10,18 @@ Install dependencies:
 npm install
 ```
 
-Run the development server:
+Start the development server:
 
 ```bash
-npm run web
+npm run dev
 ```
 
-## Building for Vercel
+## Building for Production
 
-The repository includes a `vercel.json` configuration that instructs Vercel to run the Expo web export and serve the generated static output. To create the production build locally run:
+Create an optimized production build:
 
 ```bash
 npm run build
 ```
 
-The static site will be emitted to the `dist` directory, matching the `outputDirectory` defined for Vercel deployments.
+The static site will be emitted to the `dist` directory, ready to be deployed to services such as Vercel.
