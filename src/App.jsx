@@ -1,52 +1,33 @@
-import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
 
 const initialPrompt = "Why do you want to cancel?";
+const MAX_TURNS = 6;
+const STOP_REGEX = /\n(?:User|You|Human)\s*:\s*|<\/assistant>/i;
 
-const extractQuestion = (text) => {
-  if (!text) return null;
-
-  const segments = text
-    .split(/[\r\n]+/)
-    .flatMap((segment) => segment.split(/(?<=\?)/))
-    .map((segment) => segment.trim())
-    .filter(Boolean);
-
-  for (const segment of segments) {
-    const questionIndex = segment.indexOf("?");
-    if (questionIndex === -1) continue;
-    const candidate = segment.slice(0, questionIndex + 1).trim();
-    if (candidate && candidate.length <= 120) {
-      return candidate;
-    }
+const trimMessageHistory = (history) => {
+  const result = [...history];
+  while (result.length > MAX_TURNS * 2) {
+    result.splice(0, 2);
   }
-
-  return null;
+  return result;
 };
 
-const shortenForContext = (text, maxLength = 45) => {
+const dedupeSentences = (text) => {
   if (!text) return "";
-  const cleaned = text.replace(/["“”]+/g, "").trim();
-  if (cleaned.length <= maxLength) {
-    return cleaned;
-  }
 
-  const truncated = cleaned.slice(0, maxLength);
-  const withoutDanglingWord = truncated.replace(/\s+\S*$/, "").trim();
-  return withoutDanglingWord || truncated.trim();
-};
-
-const createFollowUpQuestion = (userText, generatedText) => {
-  const question = extractQuestion(generatedText);
-  if (question) {
-    return question;
-  }
-
-  const snippet = shortenForContext(userText);
-  if (snippet) {
-    return `Could you tell me more about "${snippet}"?`;
-  }
-
-  return "Could you tell me a bit more?";
+  const seen = new Set();
+  return text
+    .split(/(?<=[.!?])\s+/)
+    .filter((segment) => {
+      const trimmed = segment.trim();
+      if (!trimmed) return false;
+      const lowered = trimmed.toLowerCase();
+      if (seen.has(lowered)) return false;
+      seen.add(lowered);
+      return true;
+    })
+    .join(" ")
+    .trim();
 };
 
 export default function App() {
@@ -55,20 +36,21 @@ export default function App() {
   const [loading, setLoading] = useState(false);
   const generatorRef = useRef(null);
   const endOfMessagesRef = useRef(null);
+  const messagesRef = useRef(messages);
+
+  useEffect(() => {
+    messagesRef.current = messages;
+  }, [messages]);
 
   const ensureGenerator = useCallback(async () => {
     if (!generatorRef.current) {
-      const { pipeline } = await import("@xenova/transformers");
+      const { env, pipeline } = await import("@xenova/transformers");
+      env.allowLocalModels = false;
+      env.useBrowserCache = true;
       generatorRef.current = await pipeline("text-generation", "Xenova/distilgpt2");
     }
     return generatorRef.current;
   }, []);
-
-  const conversationString = useMemo(() => {
-    return messages
-      .map((message) => `${message.role === "agent" ? "Agent" : "You"}: ${message.text}`)
-      .join("\n");
-  }, [messages]);
 
   const scrollToEnd = useCallback(() => {
     endOfMessagesRef.current?.scrollIntoView({ behavior: "smooth", block: "end" });
@@ -83,36 +65,72 @@ export default function App() {
       const trimmed = text.trim();
       if (!trimmed) return;
 
-      setMessages((current) => [...current, { role: "user", text: trimmed }]);
+      const nextHistory = trimMessageHistory([
+        ...messagesRef.current,
+        { role: "user", text: trimmed },
+      ]);
+      setMessages(nextHistory);
+      messagesRef.current = nextHistory;
       setInput("");
       setLoading(true);
 
       try {
         const generator = await ensureGenerator();
-        const prompt = `${conversationString}\nYou: ${trimmed}`;
+        const conversation = nextHistory
+          .map((message) =>
+            `${message.role === "agent" ? "Assistant" : "User"}: ${message.text}`
+          )
+          .join("\n");
+        const systemPrompt = [
+          "You are a helpful, concise assistant.",
+          "- Always respond with ONE short, context-based QUESTION.",
+          "- Do NOT repeat the user's words verbatim.",
+          "- Keep answers under 20 words.",
+          "- If the user states a problem, ask a targeted clarifying question.",
+        ].join("\n");
+        const prompt = `${systemPrompt}\n\nConversation:\n${conversation}\nAssistant:`;
         const output = await generator(prompt, {
           max_new_tokens: 80,
-          temperature: 0.7,
+          temperature: 0.6,
           top_p: 0.9,
+          top_k: 50,
+          repetition_penalty: 1.3,
+          no_repeat_ngram_size: 4,
+          do_sample: true,
         });
-        const generated = output[0]?.generated_text ?? "";
-        const completion = generated.slice(prompt.length).trim();
-        const followUp = createFollowUpQuestion(trimmed, completion);
-        setMessages((current) => [...current, { role: "agent", text: followUp }]);
+        const fullText = output[0]?.generated_text ?? "";
+        let assistant = fullText.split("Assistant:").pop() ?? "";
+        assistant = assistant.split(STOP_REGEX)[0]?.trim() ?? "";
+        assistant = dedupeSentences(assistant);
+
+        const echoesUser = assistant && trimmed && assistant.toLowerCase().includes(trimmed.toLowerCase());
+        if (!assistant || assistant.length < 3 || echoesUser) {
+          assistant =
+            "Understood—do you want to cancel now because the connection is down, or schedule for later?";
+        }
+
+        const updatedHistory = trimMessageHistory([
+          ...messagesRef.current,
+          { role: "agent", text: assistant },
+        ]);
+        setMessages(updatedHistory);
+        messagesRef.current = updatedHistory;
       } catch (error) {
         console.error(error);
-        setMessages((current) => [
-          ...current,
+        const fallbackHistory = trimMessageHistory([
+          ...messagesRef.current,
           {
             role: "agent",
             text: "I'm having trouble responding right now. Could you try again in a moment?",
           },
         ]);
+        setMessages(fallbackHistory);
+        messagesRef.current = fallbackHistory;
       } finally {
         setLoading(false);
       }
     },
-    [conversationString, ensureGenerator]
+    [ensureGenerator]
   );
 
   const handleSubmit = useCallback(
