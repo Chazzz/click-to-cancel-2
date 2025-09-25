@@ -1,4 +1,5 @@
 import { useCallback, useEffect, useRef, useState } from "react";
+import PongChallenge from "./PongChallenge";
 
 const monthNames = [
   "january",
@@ -329,6 +330,7 @@ const modes = {
   correctionSelect: "correction-select",
   correctionInput: "correction-input",
   completed: "completed",
+  pong: "pong",
 };
 
 export default function App() {
@@ -340,6 +342,33 @@ export default function App() {
   const [pendingField, setPendingField] = useState(null);
   const endOfMessagesRef = useRef(null);
 
+  const pushMessages = useCallback((newMessages) => {
+    setMessages((previous) => [...previous, ...newMessages]);
+  }, []);
+
+  const handlePongVictory = useCallback(() => {
+    pushMessages([
+      {
+        role: "agent",
+        text: "Alright, you got me—that was some sharp reflexes!",
+      },
+      {
+        role: "agent",
+        text: "I'll submit the cancellation with those details and send a confirmation to your contact on file. Is there anything else I can do for you today?",
+      },
+    ]);
+    setMode(modes.completed);
+  }, [pushMessages]);
+
+  const handlePongRematch = useCallback(() => {
+    pushMessages([
+      {
+        role: "agent",
+        text: "Nice try! I took that round—tap the arrow buttons on the Pong board to challenge me again.",
+      },
+    ]);
+  }, [pushMessages]);
+
   const scrollToEnd = useCallback(() => {
     endOfMessagesRef.current?.scrollIntoView({ behavior: "smooth", block: "end" });
   }, []);
@@ -347,10 +376,6 @@ export default function App() {
   useEffect(() => {
     scrollToEnd();
   }, [messages, scrollToEnd]);
-
-  const pushMessages = useCallback((newMessages) => {
-    setMessages((previous) => [...previous, ...newMessages]);
-  }, []);
 
   const handleUserMessage = useCallback(
     (rawText) => {
@@ -401,9 +426,9 @@ export default function App() {
         if (yesNo === "yes") {
           agentReplies.push({
             role: "agent",
-            text: "Great—I'll submit the cancellation with those details and send a confirmation to your contact on file. Is there anything else I can do for you today?",
+            text: "Before I lock this in, you'll need to beat me in a quick game of Pong. Use the on-screen arrow buttons to move your paddle!",
           });
-          nextMode = modes.completed;
+          nextMode = modes.pong;
         } else if (yesNo === "no") {
           agentReplies.push({
             role: "agent",
@@ -433,6 +458,11 @@ export default function App() {
             });
           }
         }
+      } else if (mode === modes.pong) {
+        agentReplies.push({
+          role: "agent",
+          text: "The match is still on—use the arrow buttons on the Pong board to move your paddle and snag the win!",
+        });
       } else if (mode === modes.correctionSelect) {
         const fieldKey = identifyField(trimmed);
         if (!fieldKey) {
@@ -557,6 +587,9 @@ export default function App() {
           <li ref={endOfMessagesRef} />
         </ul>
       </main>
+      {mode === modes.pong && (
+        <PongChallenge onPlayerWin={handlePongVictory} onAgentWin={handlePongRematch} />
+      )}
       <form className="input" onSubmit={handleSubmit}>
         <label htmlFor="chat-input" className="sr-only">
           Type your response
