@@ -345,6 +345,9 @@ const modes = {
   pong: "pong",
 };
 
+const closedChatResponse =
+  "this chat is closed, to cancel again, please reload this page.";
+
 export default function App() {
   const [messages, setMessages] = useState(initialMessages);
   const [input, setInput] = useState("");
@@ -629,32 +632,7 @@ export default function App() {
           nextPendingField = null;
         }
       } else if (mode === modes.completed) {
-        const fieldKey = identifyField(trimmed);
-        if (fieldKey) {
-          const step = scriptByKey[fieldKey];
-          const extraction = step.extract(trimmed);
-          if (extraction) {
-            agentReplies.push({
-              role: "agent",
-              text: "Absolutely—we can still make that adjustment before it's finalized.",
-            });
-            handleSuccessfulCapture(step, extraction);
-            appendSummaryAndPrompt(updatedData);
-            nextMode = modes.confirm;
-          } else {
-            agentReplies.push({
-              role: "agent",
-              text: `Happy to help. What's the correct ${step.label}?`,
-            });
-            nextMode = modes.correctionInput;
-            nextPendingField = fieldKey;
-          }
-        } else {
-          agentReplies.push({
-            role: "agent",
-            text: "Everything is already scheduled, but if something needs to change just let me know which detail to update.",
-          });
-        }
+        agentReplies.push({ role: "agent", text: closedChatResponse });
       }
 
       pushMessages([userMessage]);
