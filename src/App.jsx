@@ -335,6 +335,28 @@ const initialMessages = [
   { role: "agent", text: cancellationScript[0].question },
 ];
 
+const hardModeScenario = {
+  accountName: "Jordan McAllister",
+  serviceType: "Internet",
+  cancellationReason: "Relocating our headquarters to Phoenix, Arizona.",
+  cancellationDate: "May 18, 2024",
+  equipmentStatus: "Still have the modem and security gateway to return.",
+  contactMethod: "jordan.mcallister@acmecorp.com",
+};
+
+const normalizeForComparison = (key, value) => {
+  if (!value) return "";
+  let normalized = value.trim().toLowerCase().replace(/\s+/g, " ");
+  if (key !== "contactMethod") {
+    normalized = normalized.replace(/\.+$/, "");
+  }
+  return normalized;
+};
+
+const hardModeNormalized = Object.fromEntries(
+  Object.entries(hardModeScenario).map(([key, value]) => [key, normalizeForComparison(key, value)])
+);
+
 const modes = {
   collecting: "collecting",
   confirm: "confirm",
@@ -349,13 +371,14 @@ const closedChatResponse =
   "this chat is closed, to cancel again, please reload this page.";
 
 export default function App() {
-  const [messages, setMessages] = useState(initialMessages);
+  const [messages, setMessages] = useState([]);
   const [input, setInput] = useState("");
   const [stepIndex, setStepIndex] = useState(0);
   const [formData, setFormData] = useState({});
   const [mode, setMode] = useState(modes.collecting);
   const [pendingField, setPendingField] = useState(null);
   const [isAgentTyping, setIsAgentTyping] = useState(false);
+  const [difficulty, setDifficulty] = useState(null);
   const endOfMessagesRef = useRef(null);
   const typingQueueRef = useRef([]);
   const pongActivationTimeoutRef = useRef(null);
@@ -504,6 +527,7 @@ export default function App() {
 
   const handleUserMessage = useCallback(
     (rawText) => {
+      if (!difficulty) return;
       const trimmed = rawText.trim();
       if (!trimmed) return;
 
@@ -517,6 +541,23 @@ export default function App() {
       let nextMode = mode;
       let nextPendingField = pendingField;
       let shouldStartPongChallenge = false;
+      const isHardMode = difficulty === "hard";
+
+      const validateHardModeValue = (step, formatted) => {
+        if (!isHardMode) return true;
+        const expected = hardModeNormalized[step.key];
+        if (!expected) return true;
+        return normalizeForComparison(step.key, formatted) === expected;
+      };
+
+      const handleHardModeMismatch = (step) => {
+        agentReplies.push({
+          role: "agent",
+          text: "Thanks for that, but it doesn't match any of the records I have for this account.",
+        });
+        const guidance = step.guidance ? ` ${step.guidance}` : "";
+        agentReplies.push({ role: "agent", text: `${step.question}${guidance}` });
+      };
 
       const appendSummaryAndPrompt = (data) => {
         agentReplies.push({ role: "agent", text: formatSummary(data) });
@@ -528,8 +569,8 @@ export default function App() {
         agentReplies.push({ role: "agent", text: `${step.retry}${guidance}` });
       };
 
-      const handleSuccessfulCapture = (step, value) => {
-        const formatted = step.format(value);
+      const handleSuccessfulCapture = (step, value, formattedValue) => {
+        const formatted = formattedValue ?? step.format(value);
         updatedData = { ...updatedData, [step.key]: formatted };
         dataChanged = true;
         agentReplies.push({ role: "agent", text: step.acknowledge(formatted) });
@@ -541,13 +582,18 @@ export default function App() {
         if (!extraction) {
           addRetry(step);
         } else {
-          handleSuccessfulCapture(step, extraction);
-          nextStepIndex = stepIndex + 1;
-          if (nextStepIndex < cancellationScript.length) {
-            agentReplies.push({ role: "agent", text: cancellationScript[nextStepIndex].question });
+          const formatted = step.format(extraction);
+          if (!validateHardModeValue(step, formatted)) {
+            handleHardModeMismatch(step);
           } else {
-            appendSummaryAndPrompt(updatedData);
-            nextMode = modes.confirm;
+            handleSuccessfulCapture(step, extraction, formatted);
+            nextStepIndex = stepIndex + 1;
+            if (nextStepIndex < cancellationScript.length) {
+              agentReplies.push({ role: "agent", text: cancellationScript[nextStepIndex].question });
+            } else {
+              appendSummaryAndPrompt(updatedData);
+              nextMode = modes.confirm;
+            }
           }
         }
       } else if (mode === modes.confirm) {
@@ -571,8 +617,13 @@ export default function App() {
             const step = scriptByKey[fieldKey];
             const extraction = step.extract(trimmed);
             if (extraction) {
-              handleSuccessfulCapture(step, extraction);
-              appendSummaryAndPrompt(updatedData);
+              const formatted = step.format(extraction);
+              if (!validateHardModeValue(step, formatted)) {
+                handleHardModeMismatch(step);
+              } else {
+                handleSuccessfulCapture(step, extraction, formatted);
+                appendSummaryAndPrompt(updatedData);
+              }
             } else {
               agentReplies.push({
                 role: "agent",
@@ -604,10 +655,15 @@ export default function App() {
           const step = scriptByKey[fieldKey];
           const extraction = step.extract(trimmed);
           if (extraction) {
-            handleSuccessfulCapture(step, extraction);
-            appendSummaryAndPrompt(updatedData);
-            nextMode = modes.confirm;
-            nextPendingField = null;
+            const formatted = step.format(extraction);
+            if (!validateHardModeValue(step, formatted)) {
+              handleHardModeMismatch(step);
+            } else {
+              handleSuccessfulCapture(step, extraction, formatted);
+              appendSummaryAndPrompt(updatedData);
+              nextMode = modes.confirm;
+              nextPendingField = null;
+            }
           } else {
             agentReplies.push({
               role: "agent",
@@ -626,10 +682,15 @@ export default function App() {
             text: `Thanks for sticking with me—I'm still not sure I understood. ${step.retry}${step.guidance ? ` ${step.guidance}` : ""}`,
           });
         } else {
-          handleSuccessfulCapture(step, extraction);
-          appendSummaryAndPrompt(updatedData);
-          nextMode = modes.confirm;
-          nextPendingField = null;
+          const formatted = step.format(extraction);
+          if (!validateHardModeValue(step, formatted)) {
+            handleHardModeMismatch(step);
+          } else {
+            handleSuccessfulCapture(step, extraction, formatted);
+            appendSummaryAndPrompt(updatedData);
+            nextMode = modes.confirm;
+            nextPendingField = null;
+          }
         }
       } else if (mode === modes.completed) {
         agentReplies.push({ role: "agent", text: closedChatResponse });
@@ -659,32 +720,79 @@ export default function App() {
         }, safeDelay);
       }
     },
-    [clearPongActivationTimeout, flushTypingQueue, formData, mode, pendingField, pushMessages, scheduleAgentReplies, stepIndex]
+    [
+      clearPongActivationTimeout,
+      difficulty,
+      flushTypingQueue,
+      formData,
+      mode,
+      pendingField,
+      pushMessages,
+      scheduleAgentReplies,
+      stepIndex,
+    ]
   );
+
+  const handleModeSelection = useCallback(
+    (selectedMode) => {
+      clearPongActivationTimeout();
+      flushTypingQueue();
+      setIsAgentTyping(false);
+      setDifficulty(selectedMode);
+      setFormData({});
+      setStepIndex(0);
+      setMode(modes.collecting);
+      setPendingField(null);
+      setInput("");
+
+      const startMessages = [...initialMessages];
+      if (selectedMode === "easy") {
+        startMessages.splice(1, 0, {
+          role: "agent",
+          text: "Admin override is enabled—share any account details you'd like me to cancel.",
+        });
+      } else if (selectedMode === "hard") {
+        startMessages.splice(1, 0, {
+          role: "agent",
+          text: "Thanks! I'll double-check every answer against the records provided, so please use the exact details.",
+        });
+      }
+      setMessages(startMessages);
+    },
+    [clearPongActivationTimeout, flushTypingQueue]
+  );
+
+  const isInputDisabled = !difficulty || mode === modes.pong || mode === modes.completed;
 
   const handleSubmit = useCallback(
     (event) => {
       event.preventDefault();
+      if (isInputDisabled) {
+        return;
+      }
       const currentInput = input;
       setInput("");
       handleUserMessage(currentInput);
     },
-    [handleUserMessage, input]
+    [handleUserMessage, input, isInputDisabled]
   );
 
   const handleKeyDown = useCallback(
     (event) => {
       if (event.key === "Enter" && !event.shiftKey) {
         event.preventDefault();
+        if (isInputDisabled) {
+          return;
+        }
         const currentInput = input;
         setInput("");
         handleUserMessage(currentInput);
       }
     },
-    [handleUserMessage, input]
+    [handleUserMessage, input, isInputDisabled]
   );
 
-  const chatClassName = `chat${mode === modes.pong ? " chat--overlay-active" : ""}`;
+  const chatClassName = `chat${!difficulty || mode === modes.pong ? " chat--overlay-active" : ""}`;
 
   return (
     <div className="app">
@@ -693,7 +801,7 @@ export default function App() {
         <p className="app__subtitle">Let’s work through the best way to end your service.</p>
       </header>
       <main className={chatClassName} aria-live="polite">
-        <ul className="chat__messages" aria-hidden={mode === modes.pong}>
+        <ul className="chat__messages" aria-hidden={!difficulty || mode === modes.pong}>
           {messages.map((message, index) => (
             <li key={`${message.role}-${index}`} className={`chat__message chat__message--${message.role}`}>
               <span className="chat__author">{message.role === "agent" ? "Agent" : "You"}</span>
@@ -713,6 +821,67 @@ export default function App() {
           )}
           <li ref={endOfMessagesRef} />
         </ul>
+        {!difficulty && (
+          <div className="chat__overlay" role="dialog" aria-modal="true" aria-label="Select difficulty">
+            <div className="mode-overlay">
+              <h2 className="mode-overlay__title">Choose your challenge</h2>
+              <p className="mode-overlay__subtitle">Pick how you'd like to run today's cancellation.</p>
+              <div className="mode-overlay__options">
+                <section className="mode-card">
+                  <header className="mode-card__header">
+                    <span className="mode-card__eyebrow">Easy mode</span>
+                    <h3>Quick sandbox</h3>
+                  </header>
+                  <p className="mode-card__highlight">Admin enabled</p>
+                  <p className="mode-card__description">Cancel for whoever you like!</p>
+                  <button
+                    type="button"
+                    className="mode-card__button"
+                    onClick={() => handleModeSelection("easy")}
+                  >
+                    Start easy mode
+                  </button>
+                </section>
+                <section className="mode-card mode-card--hard">
+                  <header className="mode-card__header">
+                    <span className="mode-card__eyebrow">Hard mode</span>
+                    <h3>Records locked in</h3>
+                  </header>
+                  <p className="mode-card__description">
+                    You'll need to match the exact account information below.
+                  </p>
+                  <ul className="mode-card__details">
+                    <li>
+                      <strong>Account holder:</strong> {hardModeScenario.accountName}
+                    </li>
+                    <li>
+                      <strong>Service:</strong> {hardModeScenario.serviceType}
+                    </li>
+                    <li>
+                      <strong>Reason:</strong> {hardModeScenario.cancellationReason}
+                    </li>
+                    <li>
+                      <strong>Effective date:</strong> {hardModeScenario.cancellationDate}
+                    </li>
+                    <li>
+                      <strong>Equipment:</strong> {hardModeScenario.equipmentStatus}
+                    </li>
+                    <li>
+                      <strong>Contact:</strong> {hardModeScenario.contactMethod}
+                    </li>
+                  </ul>
+                  <button
+                    type="button"
+                    className="mode-card__button"
+                    onClick={() => handleModeSelection("hard")}
+                  >
+                    I'm ready for hard mode
+                  </button>
+                </section>
+              </div>
+            </div>
+          </div>
+        )}
         {mode === modes.pong && (
           <div className="chat__overlay" role="dialog" aria-modal="true" aria-label="Pong challenge">
             <PongChallenge onPlayerWin={handlePongVictory} onAgentWin={handlePongRematch} />
@@ -729,9 +898,10 @@ export default function App() {
           value={input}
           onChange={(event) => setInput(event.target.value)}
           onKeyDown={handleKeyDown}
-          placeholder="Type your response here"
+          placeholder={difficulty ? "Type your response here" : "Select a mode to begin"}
+          disabled={isInputDisabled}
         />
-        <button type="submit" disabled={!input.trim()}>
+        <button type="submit" disabled={isInputDisabled || !input.trim()}>
           Send
         </button>
       </form>
