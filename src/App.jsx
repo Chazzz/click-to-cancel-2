@@ -232,7 +232,7 @@ const cancellationScript = [
     retry:
       "I want to make sure we handle any equipment properly. Do you still have anything from us that needs to go back?",
     guidance:
-      "Please answer with something like \"no equipment needs to be returned\" or \"I still have the modem to send back.\"",
+      "Please answer yes or no about having equipment, like \"no, nothing to return\" or \"yes, I still have the modem to send back.\"",
     acknowledge: (value) => `Thanks for confirming about the equipment: ${value}.`,
     extract: extractEquipmentStatus,
     format: (value) => value,
