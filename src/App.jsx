@@ -378,13 +378,14 @@ export default function App() {
   }, [clearPongActivationTimeout, mode, pushMessages]);
 
   const scheduleAgentReplies = useCallback(
-    (agentReplies) => {
+    (agentReplies, options = {}) => {
       if (!agentReplies.length) {
         setIsAgentTyping(false);
         return 0;
       }
 
-      let cumulativeDelay = 0;
+      const { initialDelay = 0 } = options;
+      let cumulativeDelay = initialDelay;
       setIsAgentTyping(true);
       let lastMessageDelay = 0;
 
@@ -421,16 +422,19 @@ export default function App() {
 
   const handlePongVictory = useCallback(() => {
     clearPongActivationTimeout();
-    scheduleAgentReplies([
-      {
-        role: "agent",
-        text: "Alright, you got me—that was some sharp reflexes!",
-      },
-      {
-        role: "agent",
-        text: "I'll submit the cancellation with those details and send a confirmation to your contact on file. Is there anything else I can do for you today?",
-      },
-    ]);
+    scheduleAgentReplies(
+      [
+        {
+          role: "agent",
+          text: "Alright, you got me—that was some sharp reflexes!",
+        },
+        {
+          role: "agent",
+          text: "I'll submit the cancellation with those details and send a confirmation to your contact on file. Is there anything else I can do for you today?",
+        },
+      ],
+      { initialDelay: 900 }
+    );
     setMode(modes.completed);
   }, [clearPongActivationTimeout, scheduleAgentReplies]);
 
@@ -440,17 +444,20 @@ export default function App() {
     setStepIndex(0);
     setPendingField(null);
     setMode(modes.collecting);
-    scheduleAgentReplies([
-      {
-        role: "agent",
-        text: "Nice try! I took that round—those on-screen arrow buttons can be sneaky.",
-      },
-      {
-        role: "agent",
-        text: "Let's start fresh so I capture everything correctly.",
-      },
-      { role: "agent", text: cancellationScript[0].question },
-    ]);
+    scheduleAgentReplies(
+      [
+        {
+          role: "agent",
+          text: "Nice try! I took that round—those on-screen arrow buttons can be sneaky.",
+        },
+        {
+          role: "agent",
+          text: "Let's start fresh so I capture everything correctly.",
+        },
+        { role: "agent", text: cancellationScript[0].question },
+      ],
+      { initialDelay: 900 }
+    );
   }, [clearPongActivationTimeout, scheduleAgentReplies, setFormData, setMode, setPendingField, setStepIndex]);
 
   const scrollToEnd = useCallback(() => {
@@ -635,7 +642,7 @@ export default function App() {
       }
       if (shouldStartPongChallenge) {
         clearPongActivationTimeout();
-        const safeDelay = typeof totalDelay === "number" && totalDelay > 0 ? totalDelay + 600 : 1200;
+        const safeDelay = typeof totalDelay === "number" && totalDelay > 0 ? totalDelay + 1400 : 2000;
         pongActivationTimeoutRef.current = setTimeout(() => {
           setMode(modes.pong);
           pongActivationTimeoutRef.current = null;
