@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useRef, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import PongChallenge from "./PongChallenge";
 
 const monthNames = [
@@ -335,13 +335,55 @@ const initialMessages = [
   { role: "agent", text: cancellationScript[0].question },
 ];
 
-const hardModeScenario = {
-  accountName: "Jordan McAllister",
-  serviceType: "Internet",
-  cancellationReason: "Relocating our headquarters to Phoenix, Arizona.",
-  cancellationDate: "May 18, 2024",
-  equipmentStatus: "Still have the modem and security gateway to return.",
-  contactMethod: "jordan.mcallister@acmecorp.com",
+const hardModeScenarios = [
+  {
+    accountName: "Jordan McAllister",
+    serviceType: "Internet",
+    cancellationReason: "Relocating our headquarters to Phoenix, Arizona.",
+    cancellationDate: "May 18, 2024",
+    equipmentStatus: "Still have the modem and security gateway to return.",
+    contactMethod: "jordan.mcallister@acmecorp.com",
+  },
+  {
+    accountName: "Priya Desai",
+    serviceType: "Cable TV",
+    cancellationReason: "Switching to a streaming-only setup for the household.",
+    cancellationDate: "June 2, 2024",
+    equipmentStatus: "Need to return two set-top boxes and a DVR.",
+    contactMethod: "(503) 447-8890",
+  },
+  {
+    accountName: "Miguel Santos",
+    serviceType: "Mobile phone",
+    cancellationReason: "Consolidating all lines under our corporate provider.",
+    cancellationDate: "As soon as possible",
+    equipmentStatus: "No equipment needs to be returned.",
+    contactMethod: "miguel.santos@blueorbit.io",
+  },
+  {
+    accountName: "Alicia Chen",
+    serviceType: "Security system",
+    cancellationReason: "Moving into a building with its own monitored security.",
+    cancellationDate: "July 1, 2024",
+    equipmentStatus: "Still have the control panel and sensors to ship back.",
+    contactMethod: "(212) 555-4839",
+  },
+  {
+    accountName: "Samir Patel",
+    serviceType: "Streaming",
+    cancellationReason: "Wrapping up our limited series partnership campaign.",
+    cancellationDate: "End of the month",
+    equipmentStatus: "No physical equipment was provided.",
+    contactMethod: "samir.patel@northstar.media",
+  },
+];
+
+const getRandomHardScenario = () => {
+  if (!hardModeScenarios.length) {
+    return null;
+  }
+  const randomIndex = Math.floor(Math.random() * hardModeScenarios.length);
+  return hardModeScenarios[randomIndex];
 };
 
 const normalizeForComparison = (key, value) => {
@@ -352,10 +394,6 @@ const normalizeForComparison = (key, value) => {
   }
   return normalized;
 };
-
-const hardModeNormalized = Object.fromEntries(
-  Object.entries(hardModeScenario).map(([key, value]) => [key, normalizeForComparison(key, value)])
-);
 
 const modes = {
   collecting: "collecting",
@@ -379,9 +417,33 @@ export default function App() {
   const [pendingField, setPendingField] = useState(null);
   const [isAgentTyping, setIsAgentTyping] = useState(false);
   const [difficulty, setDifficulty] = useState(null);
+  const [hardScenario, setHardScenario] = useState(() => getRandomHardScenario());
   const endOfMessagesRef = useRef(null);
   const typingQueueRef = useRef([]);
   const pongActivationTimeoutRef = useRef(null);
+
+  const hardModeNormalized = useMemo(() => {
+    if (!hardScenario) {
+      return {};
+    }
+    return Object.fromEntries(
+      Object.entries(hardScenario).map(([key, value]) => [key, normalizeForComparison(key, value)])
+    );
+  }, [hardScenario]);
+
+  const hardScenarioDetails = useMemo(() => {
+    if (!hardScenario) {
+      return [];
+    }
+    return [
+      ["Account holder", hardScenario.accountName],
+      ["Service", hardScenario.serviceType],
+      ["Reason", hardScenario.cancellationReason],
+      ["Effective date", hardScenario.cancellationDate],
+      ["Equipment", hardScenario.equipmentStatus],
+      ["Contact", hardScenario.contactMethod],
+    ];
+  }, [hardScenario]);
 
   const pushMessages = useCallback((newMessages) => {
     setMessages((previous) => [...previous, ...newMessages]);
@@ -725,6 +787,7 @@ export default function App() {
       difficulty,
       flushTypingQueue,
       formData,
+      hardModeNormalized,
       mode,
       pendingField,
       pushMessages,
@@ -752,14 +815,33 @@ export default function App() {
           text: "Admin override is enabled—share any account details you'd like me to cancel.",
         });
       } else if (selectedMode === "hard") {
+        let scenarioForMode = hardScenario;
+        if (!scenarioForMode) {
+          scenarioForMode = getRandomHardScenario();
+          setHardScenario(scenarioForMode);
+        }
         startMessages.splice(1, 0, {
           role: "agent",
           text: "Thanks! I'll double-check every answer against the records provided, so please use the exact details.",
         });
+        if (scenarioForMode) {
+          const detailLines = [
+            `• Account holder: ${scenarioForMode.accountName}`,
+            `• Service: ${scenarioForMode.serviceType}`,
+            `• Reason: ${scenarioForMode.cancellationReason}`,
+            `• Effective date: ${scenarioForMode.cancellationDate}`,
+            `• Equipment: ${scenarioForMode.equipmentStatus}`,
+            `• Contact: ${scenarioForMode.contactMethod}`,
+          ].join("\n");
+          startMessages.splice(2, 0, {
+            role: "agent",
+            text: `Here's the account you'll be cancelling:\n${detailLines}`,
+          });
+        }
       }
       setMessages(startMessages);
     },
-    [clearPongActivationTimeout, flushTypingQueue]
+    [clearPongActivationTimeout, flushTypingQueue, hardScenario]
   );
 
   const isInputDisabled = !difficulty || mode === modes.pong || mode === modes.completed;
@@ -851,24 +933,17 @@ export default function App() {
                     You'll need to match the exact account information below.
                   </p>
                   <ul className="mode-card__details">
-                    <li>
-                      <strong>Account holder:</strong> {hardModeScenario.accountName}
-                    </li>
-                    <li>
-                      <strong>Service:</strong> {hardModeScenario.serviceType}
-                    </li>
-                    <li>
-                      <strong>Reason:</strong> {hardModeScenario.cancellationReason}
-                    </li>
-                    <li>
-                      <strong>Effective date:</strong> {hardModeScenario.cancellationDate}
-                    </li>
-                    <li>
-                      <strong>Equipment:</strong> {hardModeScenario.equipmentStatus}
-                    </li>
-                    <li>
-                      <strong>Contact:</strong> {hardModeScenario.contactMethod}
-                    </li>
+                    {hardScenarioDetails.length ? (
+                      hardScenarioDetails.map(([label, value]) => (
+                        <li key={label}>
+                          <strong>{label}:</strong> {value}
+                        </li>
+                      ))
+                    ) : (
+                      <li>
+                        <em>Generating account details…</em>
+                      </li>
+                    )}
                   </ul>
                   <button
                     type="button"
