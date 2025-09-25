@@ -82,6 +82,9 @@ const extractCancellationDate = (input) => {
   const lowered = trimmed.toLowerCase();
   const now = new Date();
 
+  if (lowered === "now" || /^right now$/.test(lowered)) {
+    return formatDate(now);
+  }
   if (/asap|soon|immediately/.test(lowered)) {
     return "As soon as possible";
   }
