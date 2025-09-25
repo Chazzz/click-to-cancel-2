@@ -422,6 +422,7 @@ export default function App() {
 
   const handlePongVictory = useCallback(() => {
     clearPongActivationTimeout();
+    setIsAgentTyping(true);
     scheduleAgentReplies(
       [
         {
@@ -436,7 +437,7 @@ export default function App() {
       { initialDelay: 900 }
     );
     setMode(modes.completed);
-  }, [clearPongActivationTimeout, scheduleAgentReplies]);
+  }, [clearPongActivationTimeout, scheduleAgentReplies, setIsAgentTyping]);
 
   const handlePongRematch = useCallback(() => {
     clearPongActivationTimeout();
@@ -444,6 +445,7 @@ export default function App() {
     setStepIndex(0);
     setPendingField(null);
     setMode(modes.collecting);
+    setIsAgentTyping(true);
     scheduleAgentReplies(
       [
         {
@@ -458,7 +460,15 @@ export default function App() {
       ],
       { initialDelay: 900 }
     );
-  }, [clearPongActivationTimeout, scheduleAgentReplies, setFormData, setMode, setPendingField, setStepIndex]);
+  }, [
+    clearPongActivationTimeout,
+    scheduleAgentReplies,
+    setFormData,
+    setMode,
+    setPendingField,
+    setStepIndex,
+    setIsAgentTyping,
+  ]);
 
   const scrollToEnd = useCallback(() => {
     endOfMessagesRef.current?.scrollIntoView({ behavior: "smooth", block: "end" });
@@ -467,6 +477,12 @@ export default function App() {
   useEffect(() => {
     scrollToEnd();
   }, [messages, scrollToEnd]);
+
+  useEffect(() => {
+    if (isAgentTyping) {
+      scrollToEnd();
+    }
+  }, [isAgentTyping, scrollToEnd]);
 
   const handleUserMessage = useCallback(
     (rawText) => {
@@ -642,7 +658,7 @@ export default function App() {
       }
       if (shouldStartPongChallenge) {
         clearPongActivationTimeout();
-        const safeDelay = typeof totalDelay === "number" && totalDelay > 0 ? totalDelay + 1400 : 2000;
+        const safeDelay = typeof totalDelay === "number" && totalDelay > 0 ? totalDelay + 2800 : 4000;
         pongActivationTimeoutRef.current = setTimeout(() => {
           setMode(modes.pong);
           pongActivationTimeoutRef.current = null;
