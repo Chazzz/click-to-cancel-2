@@ -340,14 +340,71 @@ export default function App() {
   const [formData, setFormData] = useState({});
   const [mode, setMode] = useState(modes.collecting);
   const [pendingField, setPendingField] = useState(null);
+  const [isAgentTyping, setIsAgentTyping] = useState(false);
   const endOfMessagesRef = useRef(null);
+  const typingQueueRef = useRef([]);
 
   const pushMessages = useCallback((newMessages) => {
     setMessages((previous) => [...previous, ...newMessages]);
   }, []);
 
+  const flushTypingQueue = useCallback(() => {
+    if (!typingQueueRef.current.length) {
+      setIsAgentTyping(false);
+      return;
+    }
+
+    typingQueueRef.current.forEach((entry) => {
+      clearTimeout(entry.timeoutId);
+    });
+    const remainingMessages = typingQueueRef.current.map((entry) => entry.message);
+    typingQueueRef.current = [];
+    setIsAgentTyping(false);
+    if (remainingMessages.length) {
+      pushMessages(remainingMessages);
+    }
+  }, [pushMessages]);
+
+  const scheduleAgentReplies = useCallback(
+    (agentReplies) => {
+      if (!agentReplies.length) {
+        setIsAgentTyping(false);
+        return;
+      }
+
+      let cumulativeDelay = 0;
+      setIsAgentTyping(true);
+
+      agentReplies.forEach((reply) => {
+        const typingDuration = Math.min(2200, 450 + reply.text.length * 18);
+        cumulativeDelay += typingDuration;
+        const entry = { message: reply, timeoutId: null };
+        const timeoutId = setTimeout(() => {
+          pushMessages([reply]);
+          typingQueueRef.current = typingQueueRef.current.filter((item) => item !== entry);
+          if (!typingQueueRef.current.length) {
+            setIsAgentTyping(false);
+          }
+        }, cumulativeDelay);
+        entry.timeoutId = timeoutId;
+        typingQueueRef.current.push(entry);
+        cumulativeDelay += 250;
+      });
+    },
+    [pushMessages]
+  );
+
+  useEffect(() => {
+    return () => {
+      typingQueueRef.current.forEach((entry) => {
+        clearTimeout(entry.timeoutId);
+      });
+      typingQueueRef.current = [];
+    };
+  }, []);
+
   const handlePongVictory = useCallback(() => {
-    pushMessages([
+    scheduleAgentReplies([
       {
         role: "agent",
         text: "Alright, you got me—that was some sharp reflexes!",
@@ -358,14 +415,14 @@ export default function App() {
       },
     ]);
     setMode(modes.completed);
-  }, [pushMessages]);
+  }, [scheduleAgentReplies]);
 
   const handlePongRematch = useCallback(() => {
     setFormData({});
     setStepIndex(0);
     setPendingField(null);
     setMode(modes.collecting);
-    pushMessages([
+    scheduleAgentReplies([
       {
         role: "agent",
         text: "Nice try! I took that round—those on-screen arrow buttons can be sneaky.",
@@ -376,7 +433,7 @@ export default function App() {
       },
       { role: "agent", text: cancellationScript[0].question },
     ]);
-  }, [pushMessages, setFormData, setMode, setPendingField, setStepIndex]);
+  }, [scheduleAgentReplies, setFormData, setMode, setPendingField, setStepIndex]);
 
   const scrollToEnd = useCallback(() => {
     endOfMessagesRef.current?.scrollIntoView({ behavior: "smooth", block: "end" });
@@ -390,6 +447,8 @@ export default function App() {
     (rawText) => {
       const trimmed = rawText.trim();
       if (!trimmed) return;
+
+      flushTypingQueue();
 
       const userMessage = { role: "user", text: trimmed };
       const agentReplies = [];
@@ -539,7 +598,8 @@ export default function App() {
         }
       }
 
-      pushMessages([userMessage, ...agentReplies]);
+      pushMessages([userMessage]);
+      scheduleAgentReplies(agentReplies);
 
       if (dataChanged) {
         setFormData(updatedData);
@@ -554,7 +614,7 @@ export default function App() {
         setPendingField(nextPendingField);
       }
     },
-    [formData, mode, pendingField, pushMessages, stepIndex]
+    [flushTypingQueue, formData, mode, pendingField, pushMessages, scheduleAgentReplies, stepIndex]
   );
 
   const handleSubmit = useCallback(
@@ -595,6 +655,17 @@ export default function App() {
               <p>{message.text}</p>
             </li>
           ))}
+          {isAgentTyping && (
+            <li className="chat__message chat__message--agent chat__message--typing" aria-live="assertive">
+              <span className="chat__author">Agent</span>
+              <div className="chat__typing" aria-hidden="true">
+                <span />
+                <span />
+                <span />
+              </div>
+              <span className="sr-only">Agent is typing…</span>
+            </li>
+          )}
           <li ref={endOfMessagesRef} />
         </ul>
         {mode === modes.pong && (
