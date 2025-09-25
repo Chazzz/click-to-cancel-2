@@ -361,13 +361,22 @@ export default function App() {
   }, [pushMessages]);
 
   const handlePongRematch = useCallback(() => {
+    setFormData({});
+    setStepIndex(0);
+    setPendingField(null);
+    setMode(modes.collecting);
     pushMessages([
       {
         role: "agent",
-        text: "Nice try! I took that round—tap the arrow buttons on the Pong board to challenge me again.",
+        text: "Nice try! I took that round—those on-screen arrow buttons can be sneaky.",
       },
+      {
+        role: "agent",
+        text: "Let's start fresh so I capture everything correctly.",
+      },
+      { role: "agent", text: cancellationScript[0].question },
     ]);
-  }, [pushMessages]);
+  }, [pushMessages, setFormData, setMode, setPendingField, setStepIndex]);
 
   const scrollToEnd = useCallback(() => {
     endOfMessagesRef.current?.scrollIntoView({ behavior: "smooth", block: "end" });
@@ -426,7 +435,7 @@ export default function App() {
         if (yesNo === "yes") {
           agentReplies.push({
             role: "agent",
-            text: "Before I lock this in, you'll need to beat me in a quick game of Pong. Use the on-screen arrow buttons to move your paddle!",
+          text: "Before I lock this in, you'll need to beat me in a quick game of Pong. Use the on-screen arrow buttons to move your paddle!",
           });
           nextMode = modes.pong;
         } else if (yesNo === "no") {
@@ -461,7 +470,7 @@ export default function App() {
       } else if (mode === modes.pong) {
         agentReplies.push({
           role: "agent",
-          text: "The match is still on—use the arrow buttons on the Pong board to move your paddle and snag the win!",
+          text: "The match is still on—use the on-screen arrow buttons on the Pong board to move your paddle and snag the win!",
         });
       } else if (mode === modes.correctionSelect) {
         const fieldKey = identifyField(trimmed);

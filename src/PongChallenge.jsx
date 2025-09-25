@@ -9,6 +9,9 @@ const AGENT_X = COURT_WIDTH - PLAYER_X - PADDLE_WIDTH;
 const BALL_SIZE = 12;
 const WINNING_SCORE = 3;
 
+const AGENT_TRACKING_ZONE = COURT_WIDTH * 0.35;
+const AGENT_HESITATION_CHANCE = 0.18;
+
 const randomServeVelocity = (direction) => {
   const speed = 3.6;
   const angle = (Math.random() * Math.PI) / 3 - Math.PI / 6; // between -30 and 30 degrees
@@ -60,15 +63,6 @@ export default function PongChallenge({ onPlayerWin, onAgentWin }) {
     state.ballVY = vy;
   }, []);
 
-  const resetMatch = useCallback((direction = 1) => {
-    const state = stateRef.current;
-    state.playerScore = 0;
-    state.agentScore = 0;
-    state.playerY = COURT_HEIGHT / 2 - PADDLE_HEIGHT / 2;
-    state.agentY = COURT_HEIGHT / 2 - PADDLE_HEIGHT / 2;
-    resetBall(direction);
-  }, [resetBall]);
-
   const scheduleRender = useCallback(() => {
     const state = stateRef.current;
     setRenderState({
@@ -118,19 +112,45 @@ export default function PongChallenge({ onPlayerWin, onAgentWin }) {
 
       const agentCenter = currentState.agentY + PADDLE_HEIGHT / 2;
       const ballCenter = currentState.ballY + BALL_SIZE / 2;
-      const followSpeed = 2.8 * delta;
-      if (agentCenter + 6 < ballCenter) {
-        currentState.agentY = clamp(
-          currentState.agentY + followSpeed * 4,
-          0,
-          COURT_HEIGHT - PADDLE_HEIGHT
-        );
-      } else if (agentCenter - 6 > ballCenter) {
-        currentState.agentY = clamp(
-          currentState.agentY - followSpeed * 4,
-          0,
-          COURT_HEIGHT - PADDLE_HEIGHT
-        );
+      const isBallApproaching =
+        currentState.ballVX > 0 && currentState.ballX > AGENT_TRACKING_ZONE;
+      const skipMove = Math.random() < AGENT_HESITATION_CHANCE;
+      if (!skipMove) {
+        if (isBallApproaching) {
+          const targetBuffer = 14;
+          const trackingStep = 2.25 * delta;
+          if (agentCenter + targetBuffer < ballCenter) {
+            currentState.agentY = clamp(
+              currentState.agentY + trackingStep,
+              0,
+              COURT_HEIGHT - PADDLE_HEIGHT
+            );
+          } else if (agentCenter - targetBuffer > ballCenter) {
+            currentState.agentY = clamp(
+              currentState.agentY - trackingStep,
+              0,
+              COURT_HEIGHT - PADDLE_HEIGHT
+            );
+          }
+        } else {
+          const homeY = COURT_HEIGHT / 2 - PADDLE_HEIGHT / 2;
+          const driftStep = 0.9 * delta;
+          if (agentCenter > COURT_HEIGHT / 2 + 8) {
+            currentState.agentY = clamp(
+              currentState.agentY - driftStep,
+              0,
+              COURT_HEIGHT - PADDLE_HEIGHT
+            );
+          } else if (agentCenter < COURT_HEIGHT / 2 - 8) {
+            currentState.agentY = clamp(
+              currentState.agentY + driftStep,
+              0,
+              COURT_HEIGHT - PADDLE_HEIGHT
+            );
+          } else {
+            currentState.agentY = clamp(homeY, 0, COURT_HEIGHT - PADDLE_HEIGHT);
+          }
+        }
       }
 
       // Player paddle collision
@@ -179,9 +199,10 @@ export default function PongChallenge({ onPlayerWin, onAgentWin }) {
       if (currentState.ballX + BALL_SIZE < 0) {
         currentState.agentScore += 1;
         if (currentState.agentScore >= WINNING_SCORE) {
-          const nextServeDirection = Math.random() > 0.5 ? 1 : -1;
+          currentState.playing = false;
+          scheduleRender();
           onAgentWin?.();
-          resetMatch(nextServeDirection);
+          return;
         } else {
           resetBall(1);
         }
@@ -207,7 +228,7 @@ export default function PongChallenge({ onPlayerWin, onAgentWin }) {
         cancelAnimationFrame(animationId);
       }
     };
-  }, [onAgentWin, onPlayerWin, resetBall, resetMatch, scheduleRender]);
+  }, [onAgentWin, onPlayerWin, resetBall, scheduleRender]);
 
   const movePlayer = useCallback((amount) => {
     const state = stateRef.current;
@@ -231,7 +252,7 @@ export default function PongChallenge({ onPlayerWin, onAgentWin }) {
 
   const instructions = useMemo(
     () =>
-      `First to ${WINNING_SCORE} points wins. You control the left paddle. Use the arrow buttons to move up or down.`,
+      `First to ${WINNING_SCORE} points wins. You control the left paddle. Use the on-screen arrow buttons below to move up or down.`,
     []
   );
 
