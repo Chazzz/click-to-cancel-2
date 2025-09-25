@@ -3,8 +3,11 @@ import { useCallback, useEffect, useRef, useState } from "react";
 const initialPrompt = "Why do you want to cancel?";
 const MAX_TURNS = 6;
 const STOP_REGEX = /\n(?:User|You|Human)\s*:\s*|<\/assistant>/i;
-const PREFERRED_MODEL = "Xenova/Qwen2-0.5B-Instruct";
-const FALLBACK_MODEL = "Xenova/distilgpt2";
+const MODEL_CANDIDATES = [
+  "Xenova/Qwen2-1.5B-Instruct",
+  "Xenova/Qwen2-0.5B-Instruct",
+  "Xenova/distilgpt2",
+];
 
 const trimMessageHistory = (history) => {
   const result = [...history];
@@ -50,11 +53,17 @@ export default function App() {
       env.allowLocalModels = false;
       env.useBrowserCache = true;
 
-      try {
-        generatorRef.current = await pipeline("text-generation", PREFERRED_MODEL);
-      } catch (error) {
-        console.error("Preferred model unavailable, falling back to distilgpt2", error);
-        generatorRef.current = await pipeline("text-generation", FALLBACK_MODEL);
+      for (const model of MODEL_CANDIDATES) {
+        try {
+          generatorRef.current = await pipeline("text-generation", model);
+          break;
+        } catch (error) {
+          console.error(`Unable to load ${model}, trying next fallback`, error);
+        }
+      }
+
+      if (!generatorRef.current) {
+        throw new Error("No available text-generation models");
       }
     }
     return generatorRef.current;
