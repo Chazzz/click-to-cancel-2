@@ -341,6 +341,7 @@ const modes = {
   correctionSelect: "correction-select",
   correctionInput: "correction-input",
   completed: "completed",
+  pongPending: "pong-pending",
   pong: "pong",
 };
 
@@ -351,47 +352,138 @@ export default function App() {
   const [formData, setFormData] = useState({});
   const [mode, setMode] = useState(modes.collecting);
   const [pendingField, setPendingField] = useState(null);
+  const [isAgentTyping, setIsAgentTyping] = useState(false);
   const endOfMessagesRef = useRef(null);
+  const typingQueueRef = useRef([]);
+  const pongActivationTimeoutRef = useRef(null);
 
   const pushMessages = useCallback((newMessages) => {
     setMessages((previous) => [...previous, ...newMessages]);
   }, []);
 
+  const clearPongActivationTimeout = useCallback(() => {
+    if (pongActivationTimeoutRef.current) {
+      clearTimeout(pongActivationTimeoutRef.current);
+      pongActivationTimeoutRef.current = null;
+    }
+  }, []);
+
+  const flushTypingQueue = useCallback(() => {
+    if (typingQueueRef.current.length) {
+      typingQueueRef.current.forEach((entry) => {
+        clearTimeout(entry.timeoutId);
+      });
+      const remainingMessages = typingQueueRef.current.map((entry) => entry.message);
+      typingQueueRef.current = [];
+      if (remainingMessages.length) {
+        pushMessages(remainingMessages);
+      }
+    }
+
+    setIsAgentTyping(false);
+
+    if (pongActivationTimeoutRef.current && mode === modes.pongPending) {
+      clearPongActivationTimeout();
+      setMode(modes.pong);
+    }
+  }, [clearPongActivationTimeout, mode, pushMessages]);
+
+  const scheduleAgentReplies = useCallback(
+    (agentReplies, options = {}) => {
+      if (!agentReplies.length) {
+        setIsAgentTyping(false);
+        return 0;
+      }
+
+      const { initialDelay = 0 } = options;
+      let cumulativeDelay = initialDelay;
+      setIsAgentTyping(true);
+      let lastMessageDelay = 0;
+
+      agentReplies.forEach((reply) => {
+        const typingDuration = Math.min(2200, 450 + reply.text.length * 18);
+        cumulativeDelay += typingDuration;
+        const entry = { message: reply, timeoutId: null };
+        const timeoutId = setTimeout(() => {
+          pushMessages([reply]);
+          typingQueueRef.current = typingQueueRef.current.filter((item) => item !== entry);
+          if (!typingQueueRef.current.length) {
+            setIsAgentTyping(false);
+          }
+        }, cumulativeDelay);
+        entry.timeoutId = timeoutId;
+        typingQueueRef.current.push(entry);
+        lastMessageDelay = cumulativeDelay;
+        cumulativeDelay += 250;
+      });
+      return lastMessageDelay;
+    },
+    [pushMessages]
+  );
+
+  useEffect(() => {
+    return () => {
+      typingQueueRef.current.forEach((entry) => {
+        clearTimeout(entry.timeoutId);
+      });
+      typingQueueRef.current = [];
+      clearPongActivationTimeout();
+    };
+  }, [clearPongActivationTimeout]);
+
   const handlePongVictory = useCallback(() => {
-    pushMessages([
-      {
-        role: "agent",
-        text: "Alright, you got me—that was some sharp reflexes!",
-      },
-      {
-        role: "agent",
-        text: "I'll submit the cancellation with those details and send a confirmation to your contact on file. Is there anything else I can do for you today?",
-      },
-      {
+    clearPongActivationTimeout();
+    setIsAgentTyping(true);
+    scheduleAgentReplies(
+      [
+        {
+          role: "agent",
+          text: "Alright, you got me—that was some sharp reflexes!",
+        },
+        {
+          role: "agent",
+          text: "I'll submit the cancellation with those details and send a confirmation to your contact on file. Is there anything else I can do for you today?",
+        },
+        {
         role: "agent",
         text: "Thank you for working with me today!",
-      },
-    ]);
+        },
+      ],
+      { initialDelay: 900 }
+    );
     setMode(modes.completed);
-  }, [pushMessages]);
+  }, [clearPongActivationTimeout, scheduleAgentReplies, setIsAgentTyping]);
 
   const handlePongRematch = useCallback(() => {
+    clearPongActivationTimeout();
     setFormData({});
     setStepIndex(0);
     setPendingField(null);
     setMode(modes.collecting);
-    pushMessages([
-      {
-        role: "agent",
-        text: "Nice try! I took that round—those on-screen arrow buttons can be sneaky.",
-      },
-      {
-        role: "agent",
-        text: "Let's start fresh so I capture everything correctly.",
-      },
-      { role: "agent", text: cancellationScript[0].question },
-    ]);
-  }, [pushMessages, setFormData, setMode, setPendingField, setStepIndex]);
+    setIsAgentTyping(true);
+    scheduleAgentReplies(
+      [
+        {
+          role: "agent",
+          text: "Nice try! I took that round—those on-screen arrow buttons can be sneaky.",
+        },
+        {
+          role: "agent",
+          text: "Let's start fresh so I capture everything correctly.",
+        },
+        { role: "agent", text: cancellationScript[0].question },
+      ],
+      { initialDelay: 900 }
+    );
+  }, [
+    clearPongActivationTimeout,
+    scheduleAgentReplies,
+    setFormData,
+    setMode,
+    setPendingField,
+    setStepIndex,
+    setIsAgentTyping,
+  ]);
 
   const scrollToEnd = useCallback(() => {
     endOfMessagesRef.current?.scrollIntoView({ behavior: "smooth", block: "end" });
@@ -401,10 +493,18 @@ export default function App() {
     scrollToEnd();
   }, [messages, scrollToEnd]);
 
+  useEffect(() => {
+    if (isAgentTyping) {
+      scrollToEnd();
+    }
+  }, [isAgentTyping, scrollToEnd]);
+
   const handleUserMessage = useCallback(
     (rawText) => {
       const trimmed = rawText.trim();
       if (!trimmed) return;
+
+      flushTypingQueue();
 
       const userMessage = { role: "user", text: trimmed };
       const agentReplies = [];
@@ -413,6 +513,7 @@ export default function App() {
       let nextStepIndex = stepIndex;
       let nextMode = mode;
       let nextPendingField = pendingField;
+      let shouldStartPongChallenge = false;
 
       const appendSummaryAndPrompt = (data) => {
         agentReplies.push({ role: "agent", text: formatSummary(data) });
@@ -451,9 +552,10 @@ export default function App() {
         if (yesNo === "yes") {
           agentReplies.push({
             role: "agent",
-          text: "Before I lock this in, you'll need to beat me in a quick game of Pong. Use the on-screen arrow buttons to move your paddle!",
+            text: "Before I lock this in, you'll need to beat me in a quick game of Pong. Use the on-screen arrow buttons to move your paddle!",
           });
-          nextMode = modes.pong;
+          nextMode = modes.pongPending;
+          shouldStartPongChallenge = true;
         } else if (yesNo === "no") {
           agentReplies.push({
             role: "agent",
@@ -483,7 +585,7 @@ export default function App() {
             });
           }
         }
-      } else if (mode === modes.pong) {
+      } else if (mode === modes.pong || mode === modes.pongPending) {
         agentReplies.push({
           role: "agent",
           text: "The match is still on—use the on-screen arrow buttons on the Pong board to move your paddle and snag the win!",
@@ -555,7 +657,8 @@ export default function App() {
         }
       }
 
-      pushMessages([userMessage, ...agentReplies]);
+      pushMessages([userMessage]);
+      const totalDelay = scheduleAgentReplies(agentReplies);
 
       if (dataChanged) {
         setFormData(updatedData);
@@ -569,8 +672,16 @@ export default function App() {
       if (nextPendingField !== pendingField) {
         setPendingField(nextPendingField);
       }
+      if (shouldStartPongChallenge) {
+        clearPongActivationTimeout();
+        const safeDelay = typeof totalDelay === "number" && totalDelay > 0 ? totalDelay + 2800 : 4000;
+        pongActivationTimeoutRef.current = setTimeout(() => {
+          setMode(modes.pong);
+          pongActivationTimeoutRef.current = null;
+        }, safeDelay);
+      }
     },
-    [formData, mode, pendingField, pushMessages, stepIndex]
+    [clearPongActivationTimeout, flushTypingQueue, formData, mode, pendingField, pushMessages, scheduleAgentReplies, stepIndex]
   );
 
   const handleSubmit = useCallback(
@@ -611,6 +722,17 @@ export default function App() {
               <p>{message.text}</p>
             </li>
           ))}
+          {isAgentTyping && (
+            <li className="chat__message chat__message--agent chat__message--typing" aria-live="assertive">
+              <span className="chat__author">Agent</span>
+              <div className="chat__typing" aria-hidden="true">
+                <span />
+                <span />
+                <span />
+              </div>
+              <span className="sr-only">Agent is typing…</span>
+            </li>
+          )}
           <li ref={endOfMessagesRef} />
         </ul>
         {mode === modes.pong && (

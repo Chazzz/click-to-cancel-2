@@ -141,6 +141,15 @@ body {
   background: rgba(30, 41, 59, 0.9);
 }
 
+.chat__message--typing {
+  gap: 10px;
+}
+
+.chat__message--typing .chat__typing {
+  align-items: center;
+  min-height: 12px;
+}
+
 .chat__author {
   font-size: 0.75rem;
   text-transform: uppercase;
