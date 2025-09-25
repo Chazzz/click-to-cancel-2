@@ -367,6 +367,10 @@ export default function App() {
         role: "agent",
         text: "I'll submit the cancellation with those details and send a confirmation to your contact on file. Is there anything else I can do for you today?",
       },
+      {
+        role: "agent",
+        text: "Thank you for working with me today!",
+      },
     ]);
     setMode(modes.completed);
   }, [pushMessages]);
