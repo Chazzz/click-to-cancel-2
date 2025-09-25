@@ -66,6 +66,7 @@ export default function PongChallenge({ onPlayerWin, onAgentWin }) {
     playerScore: stateRef.current.playerScore,
     agentScore: stateRef.current.agentScore,
   }));
+  const [hasClickedReady, setHasClickedReady] = useState(false);
 
   const resetBall = useCallback((direction = 1) => {
     const state = stateRef.current;
@@ -97,15 +98,6 @@ export default function PongChallenge({ onPlayerWin, onAgentWin }) {
     let animationId;
     let startDelayId;
     let previousTime = performance.now();
-
-    const startGame = () => {
-      if (stateRef.current.playing) {
-        return;
-      }
-      stateRef.current.playing = true;
-      previousTime = performance.now();
-      animationId = requestAnimationFrame(step);
-    };
 
     const step = (time) => {
       const currentState = stateRef.current;
@@ -227,6 +219,7 @@ export default function PongChallenge({ onPlayerWin, onAgentWin }) {
         if (currentState.agentScore >= WINNING_SCORE) {
           currentState.playing = false;
           scheduleRender();
+          setHasClickedReady(false);
           onAgentWin?.();
           return;
         } else {
@@ -237,6 +230,7 @@ export default function PongChallenge({ onPlayerWin, onAgentWin }) {
         if (currentState.playerScore >= WINNING_SCORE) {
           currentState.playing = false;
           scheduleRender();
+          setHasClickedReady(false);
           onPlayerWin?.();
           return;
         }
@@ -246,7 +240,18 @@ export default function PongChallenge({ onPlayerWin, onAgentWin }) {
       animationId = requestAnimationFrame(step);
     };
 
-    startDelayId = setTimeout(startGame, INITIAL_START_DELAY_MS);
+    const startGame = () => {
+      if (stateRef.current.playing) {
+        return;
+      }
+      stateRef.current.playing = true;
+      previousTime = performance.now();
+      animationId = requestAnimationFrame(step);
+    };
+
+    if (hasClickedReady) {
+      startDelayId = setTimeout(startGame, INITIAL_START_DELAY_MS);
+    }
 
     return () => {
       stateRef.current.playing = false;
@@ -257,7 +262,22 @@ export default function PongChallenge({ onPlayerWin, onAgentWin }) {
         clearTimeout(startDelayId);
       }
     };
-  }, [onAgentWin, onPlayerWin, resetBall, scheduleRender]);
+  }, [hasClickedReady, onAgentWin, onPlayerWin, resetBall, scheduleRender]);
+
+  const handleReadyClick = useCallback(() => {
+    const freshState = createInitialState();
+    freshState.playing = false;
+    stateRef.current = freshState;
+    setRenderState({
+      ballX: freshState.ballX,
+      ballY: freshState.ballY,
+      playerY: freshState.playerY,
+      agentY: freshState.agentY,
+      playerScore: freshState.playerScore,
+      agentScore: freshState.agentScore,
+    });
+    setHasClickedReady(true);
+  }, []);
 
   const movePlayer = useCallback((amount) => {
     const state = stateRef.current;
@@ -285,6 +305,13 @@ export default function PongChallenge({ onPlayerWin, onAgentWin }) {
     []
   );
 
+  const readyButtonLabel = useMemo(() => {
+    if (renderState.playerScore === 0 && renderState.agentScore === 0) {
+      return "Ready to play";
+    }
+    return "Play again";
+  }, [renderState.agentScore, renderState.playerScore]);
+
   return (
     <section className="pong" aria-label="Pong challenge">
       <header className="pong__header">
@@ -292,61 +319,72 @@ export default function PongChallenge({ onPlayerWin, onAgentWin }) {
         <p>{instructions}</p>
       </header>
       <div className="pong__board" role="img" aria-label="Pong game board">
-        <svg
-          className="pong__court"
-          viewBox={`0 0 ${COURT_WIDTH} ${COURT_HEIGHT}`}
-          preserveAspectRatio="xMidYMid meet"
-        >
-          <defs>
-            <linearGradient id="pong-bg" x1="0%" y1="0%" x2="100%" y2="100%">
-              <stop offset="0%" stopColor="rgba(37, 99, 235, 0.35)" />
-              <stop offset="100%" stopColor="rgba(30, 41, 59, 0.9)" />
-            </linearGradient>
-          </defs>
-          <rect
-            x="0"
-            y="0"
-            width={COURT_WIDTH}
-            height={COURT_HEIGHT}
-            fill="url(#pong-bg)"
-            stroke="rgba(148, 163, 184, 0.4)"
-            strokeWidth="2"
-            rx="18"
-          />
-          <line
-            x1={COURT_WIDTH / 2}
-            y1="12"
-            x2={COURT_WIDTH / 2}
-            y2={COURT_HEIGHT - 12}
-            stroke="rgba(148, 163, 184, 0.4)"
-            strokeDasharray="6 12"
-            strokeWidth="2"
-          />
-          <rect
-            x={PLAYER_X}
-            y={renderState.playerY}
-            width={PADDLE_WIDTH}
-            height={PADDLE_HEIGHT}
-            rx="4"
-            fill="#f8fafc"
-          />
-          <rect
-            x={AGENT_X}
-            y={renderState.agentY}
-            width={PADDLE_WIDTH}
-            height={PADDLE_HEIGHT}
-            rx="4"
-            fill="rgba(148, 163, 184, 0.9)"
-          />
-          <rect
-            x={renderState.ballX}
-            y={renderState.ballY}
-            width={BALL_SIZE}
-            height={BALL_SIZE}
-            rx="6"
-            fill="#facc15"
-          />
-        </svg>
+        <div className="pong__board-wrapper">
+          <svg
+            className="pong__court"
+            viewBox={`0 0 ${COURT_WIDTH} ${COURT_HEIGHT}`}
+            preserveAspectRatio="xMidYMid meet"
+          >
+            <defs>
+              <linearGradient id="pong-bg" x1="0%" y1="0%" x2="100%" y2="100%">
+                <stop offset="0%" stopColor="rgba(37, 99, 235, 0.35)" />
+                <stop offset="100%" stopColor="rgba(30, 41, 59, 0.9)" />
+              </linearGradient>
+            </defs>
+            <rect
+              x="0"
+              y="0"
+              width={COURT_WIDTH}
+              height={COURT_HEIGHT}
+              fill="url(#pong-bg)"
+              stroke="rgba(148, 163, 184, 0.4)"
+              strokeWidth="2"
+              rx="18"
+            />
+            <line
+              x1={COURT_WIDTH / 2}
+              y1="12"
+              x2={COURT_WIDTH / 2}
+              y2={COURT_HEIGHT - 12}
+              stroke="rgba(148, 163, 184, 0.4)"
+              strokeDasharray="6 12"
+              strokeWidth="2"
+            />
+            <rect
+              x={PLAYER_X}
+              y={renderState.playerY}
+              width={PADDLE_WIDTH}
+              height={PADDLE_HEIGHT}
+              rx="4"
+              fill="#f8fafc"
+            />
+            <rect
+              x={AGENT_X}
+              y={renderState.agentY}
+              width={PADDLE_WIDTH}
+              height={PADDLE_HEIGHT}
+              rx="4"
+              fill="rgba(148, 163, 184, 0.9)"
+            />
+            <rect
+              x={renderState.ballX}
+              y={renderState.ballY}
+              width={BALL_SIZE}
+              height={BALL_SIZE}
+              rx="6"
+              fill="#facc15"
+            />
+          </svg>
+          {!hasClickedReady && (
+            <button
+              type="button"
+              className="pong__ready-button"
+              onClick={handleReadyClick}
+            >
+              {readyButtonLabel}
+            </button>
+          )}
+        </div>
       </div>
       <div className="pong__scoreboard" aria-live="polite">
         <span>You: {renderState.playerScore}</span>
