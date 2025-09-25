@@ -83,13 +83,13 @@ const extractCancellationDate = (input) => {
   const now = new Date();
 
   if (lowered === "now" || /^right now$/.test(lowered)) {
-    return formatDate(now);
+    return "Today";
   }
   if (/asap|soon|immediately/.test(lowered)) {
     return "As soon as possible";
   }
   if (/today/.test(lowered)) {
-    return formatDate(now);
+    return "Today";
   }
   if (/tomorrow/.test(lowered)) {
     const tomorrow = new Date(now.getTime() + 24 * 60 * 60 * 1000);
@@ -340,7 +340,7 @@ const hardModeScenarios = [
     accountName: "Jordan McAllister",
     serviceType: "Internet",
     cancellationReason: "Relocating our headquarters to Phoenix, Arizona.",
-    cancellationDate: "September 25, 2025",
+    cancellationDate: "Today",
     equipmentStatus: "Still have the modem and security gateway to return.",
     contactMethod: "jordan.mcallister@acmecorp.com",
   },
