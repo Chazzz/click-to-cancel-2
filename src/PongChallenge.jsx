@@ -8,6 +8,7 @@ const PLAYER_X = 20;
 const AGENT_X = COURT_WIDTH - PLAYER_X - PADDLE_WIDTH;
 const BALL_SIZE = 12;
 const WINNING_SCORE = 3;
+const INITIAL_START_DELAY_MS = 1000;
 
 const AGENT_TRACKING_ZONE = COURT_WIDTH * 0.35;
 const AGENT_HESITATION_CHANCE = 0.18;
@@ -92,9 +93,19 @@ export default function PongChallenge({ onPlayerWin, onAgentWin }) {
 
   useEffect(() => {
     const state = stateRef.current;
-    state.playing = true;
+    state.playing = false;
     let animationId;
+    let startDelayId;
     let previousTime = performance.now();
+
+    const startGame = () => {
+      if (stateRef.current.playing) {
+        return;
+      }
+      stateRef.current.playing = true;
+      previousTime = performance.now();
+      animationId = requestAnimationFrame(step);
+    };
 
     const step = (time) => {
       const currentState = stateRef.current;
@@ -231,16 +242,19 @@ export default function PongChallenge({ onPlayerWin, onAgentWin }) {
         }
         resetBall(-1);
       }
-
       scheduleRender();
       animationId = requestAnimationFrame(step);
     };
 
-    animationId = requestAnimationFrame(step);
+    startDelayId = setTimeout(startGame, INITIAL_START_DELAY_MS);
+
     return () => {
       stateRef.current.playing = false;
       if (animationId) {
         cancelAnimationFrame(animationId);
+      }
+      if (startDelayId) {
+        clearTimeout(startDelayId);
       }
     };
   }, [onAgentWin, onPlayerWin, resetBall, scheduleRender]);
