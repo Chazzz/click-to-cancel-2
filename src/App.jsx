@@ -394,8 +394,21 @@ export default function App() {
     if (!hardScenario) {
       return {};
     }
+
     return Object.fromEntries(
-      Object.entries(hardScenario).map(([key, value]) => [key, normalizeForComparison(key, value)])
+      Object.entries(hardScenario).map(([key, value]) => {
+        const step = scriptByKey[key];
+        let comparableValue = value;
+
+        if (step?.extract) {
+          const extracted = step.extract(value);
+          if (extracted) {
+            comparableValue = step.format(extracted);
+          }
+        }
+
+        return [key, normalizeForComparison(key, comparableValue)];
+      })
     );
   }, [hardScenario]);
 
