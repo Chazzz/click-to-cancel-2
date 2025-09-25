@@ -188,6 +188,7 @@ const cancellationScript = [
     question: "To get started, could I have the full name on the account?",
     retry:
       "I'm sorry, I want to make sure I have the account holder's full name exactly as it appears on the account. Could you share it again?",
+    guidance: "Please reply with the complete first and last name on the account, without extra details.",
     acknowledge: (value) => `Thanks, ${value}. I've noted the account holder's name.`,
     extract: extractAccountName,
     format: (value) => value,
@@ -198,6 +199,7 @@ const cancellationScript = [
     question: "Which service are you looking to cancel today (internet, TV, mobile, etc.)?",
     retry:
       "Just to confirm, which of your services should I cancel—like internet, TV, or wireless?",
+    guidance: "Let me know the single service type, such as \"internet\", \"cable TV\", or \"mobile phone\".",
     acknowledge: (value) => `Got it—you'd like to cancel your ${value} service.`,
     extract: extractServiceType,
     format: (value) => value,
@@ -207,6 +209,7 @@ const cancellationScript = [
     label: "cancellation reason",
     question: "What's the main reason you're looking to cancel?",
     retry: "I want to be sure I capture the reason correctly. Could you tell me a bit more about why you're cancelling?",
+    guidance: "A short explanation like \"moving out of state\" or \"too expensive\" works great.",
     acknowledge: (value) => `Thanks for the context—I've noted that you're cancelling because ${value}.`,
     extract: extractReason,
     format: (value) => value,
@@ -216,6 +219,8 @@ const cancellationScript = [
     label: "cancellation date",
     question: "When would you like the cancellation to take effect?",
     retry: "I'm not sure I caught the date you prefer. Could you share the exact day you'd like us to schedule the cancellation?",
+    guidance:
+      "You can give a specific date like \"March 15\" or use timing such as \"next billing cycle\" or \"as soon as possible\".",
     acknowledge: (value) => `Understood. I'll target ${value} for the cancellation.`,
     extract: extractCancellationDate,
     format: (value) => value,
@@ -226,6 +231,8 @@ const cancellationScript = [
     question: "Do you still have any company equipment (like a modem or cable box) that needs to be returned?",
     retry:
       "I want to make sure we handle any equipment properly. Do you still have anything from us that needs to go back?",
+    guidance:
+      "Please answer yes or no about having equipment, like \"no, nothing to return\" or \"yes, I still have the modem to send back.\"",
     acknowledge: (value) => `Thanks for confirming about the equipment: ${value}.`,
     extract: extractEquipmentStatus,
     format: (value) => value,
@@ -236,6 +243,7 @@ const cancellationScript = [
     question: "What's the best phone number or email to reach you once the cancellation is processed?",
     retry:
       "I want to be sure I have the right contact info. Could you share the phone number or email we should use for updates?",
+    guidance: "Share one phone number (e.g., 555-123-4567) or an email address like name@example.com.",
     acknowledge: (value) => `Perfect, we'll reach out at ${value} if we need to follow up.`,
     extract: extractContactMethod,
     format: (value) => value,
@@ -405,7 +413,8 @@ export default function App() {
       };
 
       const addRetry = (step) => {
-        agentReplies.push({ role: "agent", text: step.retry });
+        const guidance = step.guidance ? ` ${step.guidance}` : "";
+        agentReplies.push({ role: "agent", text: `${step.retry}${guidance}` });
       };
 
       const handleSuccessfulCapture = (step, value) => {
@@ -502,7 +511,7 @@ export default function App() {
         if (!extraction) {
           agentReplies.push({
             role: "agent",
-            text: `Thanks for sticking with me—I'm still not sure I understood. ${step.retry}`,
+            text: `Thanks for sticking with me—I'm still not sure I understood. ${step.retry}${step.guidance ? ` ${step.guidance}` : ""}`,
           });
         } else {
           handleSuccessfulCapture(step, extraction);
