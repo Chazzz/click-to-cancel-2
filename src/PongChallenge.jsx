@@ -13,19 +13,31 @@ const AGENT_TRACKING_ZONE = COURT_WIDTH * 0.35;
 const AGENT_HESITATION_CHANCE = 0.18;
 
 const randomServeVelocity = (direction) => {
-  const speed = 3.6;
-  const angle = (Math.random() * Math.PI) / 3 - Math.PI / 6; // between -30 and 30 degrees
+  const towardPlayer = direction === -1;
+  const speed = towardPlayer ? 2.9 : 3.6;
+  const angleSpread = towardPlayer ? Math.PI / 4 : Math.PI / 3;
+  const angle = Math.random() * angleSpread - angleSpread / 2;
   const vx = speed * Math.cos(angle) * direction;
-  const vy = speed * Math.sin(angle);
-  const adjustedVy =
-    vy === 0 ? 0.6 * (Math.random() > 0.5 ? 1 : -1) : vy;
-  return { vx, vy: adjustedVy };
+  let vy = speed * Math.sin(angle);
+  if (towardPlayer) {
+    vy *= 0.55;
+  }
+  const minVy = towardPlayer ? 0.35 : 0.55;
+  if (Math.abs(vy) < minVy) {
+    const fallbackSign = vy === 0 ? (Math.random() > 0.5 ? 1 : -1) : Math.sign(vy);
+    vy = minVy * fallbackSign;
+  }
+  return { vx, vy };
 };
 
 const createInitialState = () => {
-  const { vx, vy } = randomServeVelocity(Math.random() > 0.5 ? 1 : -1);
+  const initialDirection = Math.random() > 0.5 ? 1 : -1;
+  const { vx, vy } = randomServeVelocity(initialDirection);
   return {
-    ballX: COURT_WIDTH / 2 - BALL_SIZE / 2,
+    ballX:
+      initialDirection === -1
+        ? COURT_WIDTH * 0.62 - BALL_SIZE / 2
+        : COURT_WIDTH / 2 - BALL_SIZE / 2,
     ballY: COURT_HEIGHT / 2 - BALL_SIZE / 2,
     ballVX: vx,
     ballVY: vy,
@@ -56,7 +68,10 @@ export default function PongChallenge({ onPlayerWin, onAgentWin }) {
 
   const resetBall = useCallback((direction = 1) => {
     const state = stateRef.current;
-    state.ballX = COURT_WIDTH / 2 - BALL_SIZE / 2;
+    state.ballX =
+      direction === -1
+        ? COURT_WIDTH * 0.62 - BALL_SIZE / 2
+        : COURT_WIDTH / 2 - BALL_SIZE / 2;
     state.ballY = COURT_HEIGHT / 2 - BALL_SIZE / 2;
     const { vx, vy } = randomServeVelocity(direction);
     state.ballVX = vx;
