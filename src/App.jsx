@@ -579,14 +579,16 @@ export default function App() {
     [handleUserMessage, input]
   );
 
+  const chatClassName = `chat${mode === modes.pong ? " chat--overlay-active" : ""}`;
+
   return (
     <div className="app">
       <header className="app__header">
         <h1>Cancellation Assistant</h1>
         <p className="app__subtitle">Let’s work through the best way to end your service.</p>
       </header>
-      <main className="chat" aria-live="polite">
-        <ul className="chat__messages">
+      <main className={chatClassName} aria-live="polite">
+        <ul className="chat__messages" aria-hidden={mode === modes.pong}>
           {messages.map((message, index) => (
             <li key={`${message.role}-${index}`} className={`chat__message chat__message--${message.role}`}>
               <span className="chat__author">{message.role === "agent" ? "Agent" : "You"}</span>
@@ -595,10 +597,12 @@ export default function App() {
           ))}
           <li ref={endOfMessagesRef} />
         </ul>
+        {mode === modes.pong && (
+          <div className="chat__overlay" role="dialog" aria-modal="true" aria-label="Pong challenge">
+            <PongChallenge onPlayerWin={handlePongVictory} onAgentWin={handlePongRematch} />
+          </div>
+        )}
       </main>
-      {mode === modes.pong && (
-        <PongChallenge onPlayerWin={handlePongVictory} onAgentWin={handlePongRematch} />
-      )}
       <form className="input" onSubmit={handleSubmit}>
         <label htmlFor="chat-input" className="sr-only">
           Type your response
