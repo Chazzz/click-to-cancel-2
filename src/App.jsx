@@ -175,13 +175,13 @@ const extractCancellationDate = (input) => {
   const now = new Date();
 
   if (lowered === "now" || /^right now$/.test(lowered)) {
-    return "Today";
+    return formatDate(now);
   }
   if (/asap|soon|immediately/.test(lowered)) {
     return "As soon as possible";
   }
   if (/today/.test(lowered)) {
-    return "Today";
+    return formatDate(now);
   }
   if (/tomorrow/.test(lowered)) {
     const tomorrow = new Date(now.getTime() + 24 * 60 * 60 * 1000);
