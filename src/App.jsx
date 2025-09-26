@@ -699,7 +699,7 @@ export default function App() {
     const closingAndIntroMessages = [
       {
         role: "agent",
-        text: "Nice try! I took that round—those on-screen arrow buttons can be sneaky.",
+        text: "Nice try! I took that round—the paddle moves so slowly, doesn't it?",
       },
       {
         role: "agent",
