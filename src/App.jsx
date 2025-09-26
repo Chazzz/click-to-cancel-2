@@ -694,8 +694,16 @@ export default function App() {
           role: "agent",
           text: "Thanks for that, but it doesn't match any of the records I have for this account.",
         });
-        const guidance = step.guidance ? ` ${step.guidance}` : "";
-        agentReplies.push({ role: "agent", text: `${step.question}${guidance}` });
+        if (step.key === "cancellationReason") {
+          const guidance = step.guidance ? ` ${step.guidance}` : "";
+          agentReplies.push({
+            role: "agent",
+            text: `Let's try again. ${step.question} You can choose from ${reasonOptionList}, or say Other if none apply.${guidance}`,
+          });
+        } else {
+          const guidance = step.guidance ? ` ${step.guidance}` : "";
+          agentReplies.push({ role: "agent", text: `${step.question}${guidance}` });
+        }
       };
 
       const appendSummaryAndPrompt = (data) => {
@@ -722,7 +730,8 @@ export default function App() {
           addRetry(step);
         } else {
           const formatted = step.format(extraction);
-          if (!validateHardModeValue(step, formatted)) {
+          const shouldValidateNow = step.key !== "cancellationReason";
+          if (shouldValidateNow && !validateHardModeValue(step, formatted)) {
             handleHardModeMismatch(step);
           } else if (step.key === "cancellationReason") {
             updatedData = { ...updatedData, [step.key]: formatted };
@@ -738,7 +747,8 @@ export default function App() {
             nextStepIndex = stepIndex + 1;
             nextMode = modes.reasonConfirm;
             nextPendingField = step.key;
-            nextReasonConfirmFollowUp = "next-question";
+            const followUp = nextReasonConfirmFollowUp ?? "next-question";
+            nextReasonConfirmFollowUp = followUp;
           } else {
             handleSuccessfulCapture(step, extraction, formatted);
             nextStepIndex = stepIndex + 1;
@@ -753,24 +763,47 @@ export default function App() {
       } else if (mode === modes.reasonConfirm && pendingField === "cancellationReason") {
         const yesNo = parseYesNo(trimmed);
         if (yesNo === "yes") {
-          agentReplies.push({
-            role: "agent",
-            text: "Great, I'll keep that noted.",
-          });
-          nextPendingField = null;
-          if (reasonConfirmFollowUp === "summary") {
-            appendSummaryAndPrompt(updatedData);
-            nextMode = modes.confirm;
-          } else {
-            nextMode = modes.collecting;
-            if (stepIndex < cancellationScript.length) {
-              agentReplies.push({ role: "agent", text: cancellationScript[stepIndex].question });
-            } else {
-              appendSummaryAndPrompt(updatedData);
-              nextMode = modes.confirm;
+          let handledMismatch = false;
+          if (pendingField === "cancellationReason") {
+            const step = scriptByKey[pendingField];
+            const expected = hardModeNormalized[step.key];
+            const currentValue = updatedData[step.key];
+            const matchesRecords =
+              !isHardMode || !expected || normalizeForComparison(step.key, currentValue) === expected;
+            if (!matchesRecords) {
+              const { [step.key]: _removedReason, ...rest } = updatedData;
+              updatedData = rest;
+              dataChanged = true;
+              handleHardModeMismatch(step);
+              const reasonStepIndex = cancellationScript.findIndex((scriptStep) => scriptStep.key === step.key);
+              nextStepIndex = reasonStepIndex >= 0 ? reasonStepIndex : stepIndex;
+              nextMode = modes.collecting;
+              nextPendingField = null;
+              nextReasonConfirmFollowUp = reasonConfirmFollowUp;
+              handledMismatch = true;
             }
           }
-          nextReasonConfirmFollowUp = null;
+
+          if (!handledMismatch) {
+            agentReplies.push({
+              role: "agent",
+              text: "Great, I'll keep that noted.",
+            });
+            nextPendingField = null;
+            if (reasonConfirmFollowUp === "summary") {
+              appendSummaryAndPrompt(updatedData);
+              nextMode = modes.confirm;
+            } else {
+              nextMode = modes.collecting;
+              if (stepIndex < cancellationScript.length) {
+                agentReplies.push({ role: "agent", text: cancellationScript[stepIndex].question });
+              } else {
+                appendSummaryAndPrompt(updatedData);
+                nextMode = modes.confirm;
+              }
+            }
+            nextReasonConfirmFollowUp = null;
+          }
         } else if (yesNo === "no") {
           const reasonStepIndex = Math.max(0, stepIndex - 1);
           const reasonStep = cancellationScript[reasonStepIndex];
@@ -818,7 +851,8 @@ export default function App() {
             const extraction = step.extract(trimmed);
             if (extraction) {
               const formatted = step.format(extraction);
-              if (!validateHardModeValue(step, formatted)) {
+              const shouldValidateNow = fieldKey !== "cancellationReason";
+              if (shouldValidateNow && !validateHardModeValue(step, formatted)) {
                 handleHardModeMismatch(step);
               } else if (fieldKey === "cancellationReason") {
                 updatedData = { ...updatedData, [step.key]: formatted };
@@ -870,7 +904,8 @@ export default function App() {
           const extraction = step.extract(trimmed);
           if (extraction) {
             const formatted = step.format(extraction);
-            if (!validateHardModeValue(step, formatted)) {
+            const shouldValidateNow = fieldKey !== "cancellationReason";
+            if (shouldValidateNow && !validateHardModeValue(step, formatted)) {
               handleHardModeMismatch(step);
             } else if (fieldKey === "cancellationReason") {
               updatedData = { ...updatedData, [step.key]: formatted };
@@ -911,7 +946,8 @@ export default function App() {
           });
         } else {
           const formatted = step.format(extraction);
-          if (!validateHardModeValue(step, formatted)) {
+          const shouldValidateNow = pendingField !== "cancellationReason";
+          if (shouldValidateNow && !validateHardModeValue(step, formatted)) {
             handleHardModeMismatch(step);
           } else if (pendingField === "cancellationReason") {
             updatedData = { ...updatedData, [step.key]: formatted };
