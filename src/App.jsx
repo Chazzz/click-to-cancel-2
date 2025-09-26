@@ -327,10 +327,27 @@ const identifyField = (input) => {
   return null;
 };
 
-const initialMessages = [
+const agentNames = [
+  "Alex",
+  "Jordan",
+  "Taylor",
+  "Morgan",
+  "Riley",
+  "Casey",
+];
+
+const createInitialMessages = (agentName) => [
   {
     role: "agent",
-    text: "Hi there—you're through to the cancellations team. I'll guide you through a few quick questions so we can wrap this up.",
+    text: `Hi, I'm ${agentName} from the cancellations team, and I'll be taking care of you today.`,
+  },
+  {
+    role: "agent",
+    text: "I'm sorry to hear you need to cancel your service—I'll make this as smooth as possible.",
+  },
+  {
+    role: "agent",
+    text: "Here's how it works: I'll ask a few quick questions to collect the details we need to complete the cancellation.",
   },
   { role: "agent", text: cancellationScript[0].question },
 ];
@@ -386,6 +403,14 @@ export default function App() {
   const [isAgentTyping, setIsAgentTyping] = useState(false);
   const [difficulty, setDifficulty] = useState(null);
   const [hardScenario, setHardScenario] = useState(() => getRandomHardScenario());
+  const agentName = useMemo(() => {
+    const randomIndex = Math.floor(Math.random() * agentNames.length);
+    return agentNames[randomIndex];
+  }, []);
+  const baseInitialMessages = useMemo(
+    () => createInitialMessages(agentName),
+    [agentName]
+  );
   const endOfMessagesRef = useRef(null);
   const typingQueueRef = useRef([]);
   const pongActivationTimeoutRef = useRef(null);
@@ -789,9 +814,17 @@ export default function App() {
       setPendingField(null);
       setInput("");
 
-      const startMessages = [...initialMessages];
+      let startMessages = [...baseInitialMessages];
+      const insertBeforeQuestion = (message) => {
+        const questionMessage = startMessages[startMessages.length - 1];
+        startMessages = [
+          ...startMessages.slice(0, -1),
+          message,
+          questionMessage,
+        ];
+      };
       if (selectedMode === "easy") {
-        startMessages.splice(1, 0, {
+        insertBeforeQuestion({
           role: "agent",
           text: "Admin override is enabled—share any account details you'd like me to cancel.",
         });
@@ -801,7 +834,7 @@ export default function App() {
           scenarioForMode = getRandomHardScenario();
           setHardScenario(scenarioForMode);
         }
-        startMessages.splice(1, 0, {
+        insertBeforeQuestion({
           role: "agent",
           text: "Thanks! I'll double-check every answer against the records provided, so please use the exact details.",
         });
@@ -814,7 +847,7 @@ export default function App() {
             `• Equipment: ${scenarioForMode.equipmentStatus}`,
             `• Contact: ${scenarioForMode.contactMethod}`,
           ].join("\n");
-          startMessages.splice(2, 0, {
+          insertBeforeQuestion({
             role: "agent",
             text: `Here's the account you'll be cancelling:\n${detailLines}`,
           });
@@ -822,7 +855,7 @@ export default function App() {
       }
       setMessages(startMessages);
     },
-    [clearPongActivationTimeout, flushTypingQueue, hardScenario]
+    [baseInitialMessages, clearPongActivationTimeout, flushTypingQueue, hardScenario]
   );
 
   const isInputDisabled = !difficulty || mode === modes.pong || mode === modes.completed;
