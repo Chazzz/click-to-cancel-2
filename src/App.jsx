@@ -1130,44 +1130,9 @@ export default function App() {
       setReasonConfirmFollowUp(null);
       setInput("");
 
-      let startMessages = [...baseInitialMessages];
-      const insertBeforeQuestion = (message) => {
-        const questionMessage = startMessages[startMessages.length - 1];
-        startMessages = [
-          ...startMessages.slice(0, -1),
-          message,
-          questionMessage,
-        ];
-      };
-      if (selectedMode === "easy") {
-        insertBeforeQuestion({
-          role: "agent",
-          text: "Admin override is enabled—share any account details you'd like me to cancel.",
-        });
-      } else if (selectedMode === "hard") {
-        let scenarioForMode = hardScenario;
-        if (!scenarioForMode) {
-          scenarioForMode = getRandomHardScenario();
-          setHardScenario(scenarioForMode);
-        }
-        insertBeforeQuestion({
-          role: "agent",
-          text: "Thanks! I'll double-check every answer against the records provided, so please use the exact details.",
-        });
-        if (scenarioForMode) {
-          const detailLines = [
-            `• Account holder: ${scenarioForMode.accountName}`,
-            `• Service: ${scenarioForMode.serviceType}`,
-            `• Reason: ${scenarioForMode.cancellationReason}`,
-            `• Effective date: ${scenarioForMode.cancellationDate}`,
-            `• Equipment: ${scenarioForMode.equipmentStatus}`,
-            `• Contact: ${scenarioForMode.contactMethod}`,
-          ].join("\n");
-          insertBeforeQuestion({
-            role: "agent",
-            text: `Here's the account you'll be cancelling:\n${detailLines}`,
-          });
-        }
+      const startMessages = [...baseInitialMessages];
+      if (selectedMode === "hard" && !hardScenario) {
+        setHardScenario(getRandomHardScenario());
       }
       setMessages([]);
       scheduleAgentReplies(startMessages);
