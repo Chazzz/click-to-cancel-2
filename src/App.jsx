@@ -70,10 +70,102 @@ const extractServiceType = (input) => {
   return capitalizeWords(trimmed);
 };
 
+const reasonCategories = [
+  {
+    label: "Moving",
+    match: (text) => {
+      const patterns = [
+        /\bmove(?:d|s|rs?)?\b/, // move, moved, moves, mover(s)
+        /\bmoving\b/,
+        /\brelocat(?:e|ed|es|ing|ion|ions)\b/,
+        /\brelo\b/,
+        /\btransfer(?:red|ring|s)?\b/,
+        /\bnew (?:city|state|place|address)\b/,
+        /\bout of (?:state|town)\b/,
+      ];
+      return patterns.some((pattern) => pattern.test(text));
+    },
+  },
+  {
+    label: "Price",
+    match: (text) => {
+      const patterns = [
+        /\bprice(?:s|y)?\b/,
+        /\bexpens\w*\b/,
+        /\bcost(?:s|ing)?\b/,
+        /\bbill(?:s|ing)?\b/,
+        /\brate(?:s)?\b/,
+        /\bfee(?:s)?\b/,
+        /\bcharge(?:s|d)?\b/,
+        /\bpromo(?:tion|s)?\b/,
+        /\bafford\w*\b/,
+        /\bincrease(?:d|s|ing)?\b/,
+        /\bwent up\b/,
+      ];
+      return patterns.some((pattern) => pattern.test(text));
+    },
+  },
+  {
+    label: "Service issues",
+    match: (text) =>
+      /(outage|issue|problem|slow|lag|buffer|disconnect|drop|unstable|speed|quality|reliab|tech support)/.test(text),
+  },
+  {
+    label: "Switching providers",
+    match: (text) => {
+      const providerKeywords = [
+        "switch",
+        "changing",
+        "going with",
+        "moving to",
+        "signed up",
+        "new provider",
+        "competitor",
+        "comcast",
+        "xfinity",
+        "spectrum",
+        "verizon",
+        "att",
+        "a t t",
+        "t-mobile",
+        "tmobile",
+        "google fiber",
+        "cox",
+        "starlink",
+        "dish",
+        "directv",
+      ];
+      return providerKeywords.some((keyword) => text.includes(keyword));
+    },
+  },
+  {
+    label: "Not using the service",
+    match: (text) =>
+      /(not (?:using|need)|no longer need|rarely use|hardly use|vacation home|seasonal|short-term|short term|temporary|airbnb|rental property)/.test(
+        text
+      ),
+  },
+  {
+    label: "Customer service concerns",
+    match: (text) => /(customer service|support|representative|agent|rude|experience|complaint|hold time)/.test(text),
+  },
+  {
+    label: "Contract or policy",
+    match: (text) => /(contract|agreement|policy|terms|termination fee|penalty|commitment|early termination)/.test(text),
+  },
+];
+
+const reasonOptionList = reasonCategories.map((category) => category.label).join(", ");
+
 const extractReason = (input) => {
   const trimmed = input.trim();
   if (trimmed.length < 3) return null;
-  return trimmed.replace(/\s+/g, " ");
+  const normalized = trimmed.toLowerCase();
+  const category = reasonCategories.find((option) => option.match(normalized));
+  return {
+    option: category ? category.label : "Other",
+    original: trimmed.replace(/\s+/g, " "),
+  };
 };
 
 const extractCancellationDate = (input) => {
@@ -215,7 +307,7 @@ const cancellationScript = [
     guidance: "A short explanation like \"moving out of state\" or \"too expensive\" works great.",
     acknowledge: (value) => `Thanks for the context—I've noted that you're cancelling because ${value}.`,
     extract: extractReason,
-    format: (value) => value,
+    format: (value) => value.option,
   },
   {
     key: "cancellationDate",
@@ -382,6 +474,7 @@ const normalizeForComparison = (key, value) => {
 
 const modes = {
   collecting: "collecting",
+  reasonConfirm: "reason-confirm",
   confirm: "confirm",
   correctionSelect: "correction-select",
   correctionInput: "correction-input",
@@ -400,6 +493,7 @@ export default function App() {
   const [formData, setFormData] = useState({});
   const [mode, setMode] = useState(modes.collecting);
   const [pendingField, setPendingField] = useState(null);
+  const [reasonConfirmFollowUp, setReasonConfirmFollowUp] = useState(null);
   const [isAgentTyping, setIsAgentTyping] = useState(false);
   const [difficulty, setDifficulty] = useState(null);
   const [hardScenario, setHardScenario] = useState(() => getRandomHardScenario());
@@ -553,6 +647,7 @@ export default function App() {
     setFormData({});
     setStepIndex(0);
     setPendingField(null);
+    setReasonConfirmFollowUp(null);
     setMode(modes.collecting);
     setIsAgentTyping(true);
     scheduleAgentReplies(
@@ -608,6 +703,7 @@ export default function App() {
       let nextStepIndex = stepIndex;
       let nextMode = mode;
       let nextPendingField = pendingField;
+      let nextReasonConfirmFollowUp = reasonConfirmFollowUp;
       let shouldStartPongChallenge = false;
       const isHardMode = difficulty === "hard";
 
@@ -623,8 +719,16 @@ export default function App() {
           role: "agent",
           text: "Thanks for that, but it doesn't match any of the records I have for this account.",
         });
-        const guidance = step.guidance ? ` ${step.guidance}` : "";
-        agentReplies.push({ role: "agent", text: `${step.question}${guidance}` });
+        if (step.key === "cancellationReason") {
+          const guidance = step.guidance ? ` ${step.guidance}` : "";
+          agentReplies.push({
+            role: "agent",
+            text: `Let's try again. ${step.question} You can choose from ${reasonOptionList}, or say Other if none apply.${guidance}`,
+          });
+        } else {
+          const guidance = step.guidance ? ` ${step.guidance}` : "";
+          agentReplies.push({ role: "agent", text: `${step.question}${guidance}` });
+        }
       };
 
       const appendSummaryAndPrompt = (data) => {
@@ -651,8 +755,25 @@ export default function App() {
           addRetry(step);
         } else {
           const formatted = step.format(extraction);
-          if (!validateHardModeValue(step, formatted)) {
+          const shouldValidateNow = step.key !== "cancellationReason";
+          if (shouldValidateNow && !validateHardModeValue(step, formatted)) {
             handleHardModeMismatch(step);
+          } else if (step.key === "cancellationReason") {
+            updatedData = { ...updatedData, [step.key]: formatted };
+            dataChanged = true;
+            agentReplies.push({
+              role: "agent",
+              text: `Thanks for sharing that. Based on what you said (\"${extraction.original}\"), I'll mark the main reason as ${formatted}.`,
+            });
+            agentReplies.push({
+              role: "agent",
+              text: `Does that sound right? If not, we can pick another option like ${reasonOptionList}, or choose Other. Please reply yes or no.`,
+            });
+            nextStepIndex = stepIndex + 1;
+            nextMode = modes.reasonConfirm;
+            nextPendingField = step.key;
+            const followUp = nextReasonConfirmFollowUp ?? "next-question";
+            nextReasonConfirmFollowUp = followUp;
           } else {
             handleSuccessfulCapture(step, extraction, formatted);
             nextStepIndex = stepIndex + 1;
@@ -663,6 +784,75 @@ export default function App() {
               nextMode = modes.confirm;
             }
           }
+        }
+      } else if (mode === modes.reasonConfirm && pendingField === "cancellationReason") {
+        const yesNo = parseYesNo(trimmed);
+        if (yesNo === "yes") {
+          let handledMismatch = false;
+          if (pendingField === "cancellationReason") {
+            const step = scriptByKey[pendingField];
+            const expected = hardModeNormalized[step.key];
+            const currentValue = updatedData[step.key];
+            const matchesRecords =
+              !isHardMode || !expected || normalizeForComparison(step.key, currentValue) === expected;
+            if (!matchesRecords) {
+              const { [step.key]: _removedReason, ...rest } = updatedData;
+              updatedData = rest;
+              dataChanged = true;
+              handleHardModeMismatch(step);
+              const reasonStepIndex = cancellationScript.findIndex((scriptStep) => scriptStep.key === step.key);
+              nextStepIndex = reasonStepIndex >= 0 ? reasonStepIndex : stepIndex;
+              nextMode = modes.collecting;
+              nextPendingField = null;
+              nextReasonConfirmFollowUp = reasonConfirmFollowUp;
+              handledMismatch = true;
+            }
+          }
+
+          if (!handledMismatch) {
+            agentReplies.push({
+              role: "agent",
+              text: "Great, I'll keep that noted.",
+            });
+            nextPendingField = null;
+            if (reasonConfirmFollowUp === "summary") {
+              appendSummaryAndPrompt(updatedData);
+              nextMode = modes.confirm;
+            } else {
+              nextMode = modes.collecting;
+              if (stepIndex < cancellationScript.length) {
+                agentReplies.push({ role: "agent", text: cancellationScript[stepIndex].question });
+              } else {
+                appendSummaryAndPrompt(updatedData);
+                nextMode = modes.confirm;
+              }
+            }
+            nextReasonConfirmFollowUp = null;
+          }
+        } else if (yesNo === "no") {
+          const reasonStepIndex = Math.max(0, stepIndex - 1);
+          const reasonStep = cancellationScript[reasonStepIndex];
+          const { [pendingField]: _removedReason, ...rest } = updatedData;
+          updatedData = rest;
+          dataChanged = true;
+          nextStepIndex = reasonStepIndex;
+          nextMode = modes.collecting;
+          nextPendingField = null;
+          nextReasonConfirmFollowUp = null;
+          agentReplies.push({
+            role: "agent",
+            text: "Thanks for letting me know. Let's try again—could you share which option fits best?",
+          });
+          const guidanceText = reasonStep.guidance ? ` ${reasonStep.guidance}` : "";
+          agentReplies.push({
+            role: "agent",
+            text: `${reasonStep.question} You can choose from ${reasonOptionList}, or say Other if none match.${guidanceText}`,
+          });
+        } else {
+          agentReplies.push({
+            role: "agent",
+            text: "Could you let me know with a quick \"yes\" or \"no\" if that reason is correct?",
+          });
         }
       } else if (mode === modes.confirm) {
         const yesNo = parseYesNo(trimmed);
@@ -686,8 +876,23 @@ export default function App() {
             const extraction = step.extract(trimmed);
             if (extraction) {
               const formatted = step.format(extraction);
-              if (!validateHardModeValue(step, formatted)) {
+              const shouldValidateNow = fieldKey !== "cancellationReason";
+              if (shouldValidateNow && !validateHardModeValue(step, formatted)) {
                 handleHardModeMismatch(step);
+              } else if (fieldKey === "cancellationReason") {
+                updatedData = { ...updatedData, [step.key]: formatted };
+                dataChanged = true;
+                agentReplies.push({
+                  role: "agent",
+                  text: `Thanks for the clarification. I'll categorize the reason as ${formatted} based on (\"${extraction.original}\").`,
+                });
+                agentReplies.push({
+                  role: "agent",
+                  text: `Does that match what you intended? If not, we can choose another option like ${reasonOptionList}, or select Other. Please reply yes or no.`,
+                });
+                nextMode = modes.reasonConfirm;
+                nextPendingField = fieldKey;
+                nextReasonConfirmFollowUp = "summary";
               } else {
                 handleSuccessfulCapture(step, extraction, formatted);
                 appendSummaryAndPrompt(updatedData);
@@ -724,8 +929,23 @@ export default function App() {
           const extraction = step.extract(trimmed);
           if (extraction) {
             const formatted = step.format(extraction);
-            if (!validateHardModeValue(step, formatted)) {
+            const shouldValidateNow = fieldKey !== "cancellationReason";
+            if (shouldValidateNow && !validateHardModeValue(step, formatted)) {
               handleHardModeMismatch(step);
+            } else if (fieldKey === "cancellationReason") {
+              updatedData = { ...updatedData, [step.key]: formatted };
+              dataChanged = true;
+              agentReplies.push({
+                role: "agent",
+                text: `Thanks for the update. Based on what you shared (\"${extraction.original}\"), I'll set the reason to ${formatted}.`,
+              });
+              agentReplies.push({
+                role: "agent",
+                text: `Does that look right? If not, we can pick another option like ${reasonOptionList}, or choose Other. Please reply yes or no.`,
+              });
+              nextMode = modes.reasonConfirm;
+              nextPendingField = fieldKey;
+              nextReasonConfirmFollowUp = "summary";
             } else {
               handleSuccessfulCapture(step, extraction, formatted);
               appendSummaryAndPrompt(updatedData);
@@ -751,8 +971,23 @@ export default function App() {
           });
         } else {
           const formatted = step.format(extraction);
-          if (!validateHardModeValue(step, formatted)) {
+          const shouldValidateNow = pendingField !== "cancellationReason";
+          if (shouldValidateNow && !validateHardModeValue(step, formatted)) {
             handleHardModeMismatch(step);
+          } else if (pendingField === "cancellationReason") {
+            updatedData = { ...updatedData, [step.key]: formatted };
+            dataChanged = true;
+            agentReplies.push({
+              role: "agent",
+              text: `Got it. I'll note the reason as ${formatted} based on what you shared (\"${extraction.original}\").`,
+            });
+            agentReplies.push({
+              role: "agent",
+              text: `Does that work for you? If not, we can pick from options like ${reasonOptionList}, or choose Other. Please reply yes or no.`,
+            });
+            nextMode = modes.reasonConfirm;
+            nextPendingField = pendingField;
+            nextReasonConfirmFollowUp = "summary";
           } else {
             handleSuccessfulCapture(step, extraction, formatted);
             appendSummaryAndPrompt(updatedData);
@@ -779,6 +1014,9 @@ export default function App() {
       if (nextPendingField !== pendingField) {
         setPendingField(nextPendingField);
       }
+      if (nextReasonConfirmFollowUp !== reasonConfirmFollowUp) {
+        setReasonConfirmFollowUp(nextReasonConfirmFollowUp);
+      }
       if (shouldStartPongChallenge) {
         clearPongActivationTimeout();
         const safeDelay = typeof totalDelay === "number" && totalDelay > 0 ? totalDelay + 2800 : 4000;
@@ -796,6 +1034,7 @@ export default function App() {
       hardModeNormalized,
       mode,
       pendingField,
+      reasonConfirmFollowUp,
       pushMessages,
       scheduleAgentReplies,
       stepIndex,
@@ -812,6 +1051,7 @@ export default function App() {
       setStepIndex(0);
       setMode(modes.collecting);
       setPendingField(null);
+      setReasonConfirmFollowUp(null);
       setInput("");
 
       let startMessages = [...baseInitialMessages];
