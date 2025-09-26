@@ -24,6 +24,8 @@ const capitalizeWords = (value) =>
     .map((word) => word.charAt(0).toUpperCase() + word.slice(1))
     .join(" ");
 
+const escapeRegExp = (value) => value.replace(/[-/\\^$*+?.()|[\]{}]/g, "\\$&");
+
 const formatDate = (date) =>
   date.toLocaleDateString("en-US", {
     month: "long",
@@ -232,8 +234,104 @@ const extractCancellationDate = (input) => {
   return null;
 };
 
-const equipmentDetailPattern =
-  /(modem|router|gateway|cable box|tv box|set-?top box|dvr|receiver|security gateway|ont|fiber jack|camera|sensor|panel|hub|extender|pod|mesh|dish|remote|box)/i;
+const equipmentCatalog = [
+  { label: "modem", display: "modem", tokens: ["modem", "modems"] },
+  { label: "router", display: "router", tokens: ["router", "routers"] },
+  {
+    label: "security gateway",
+    display: "security gateway",
+    tokens: ["security gateway", "security gateways"],
+  },
+  {
+    label: "gateway",
+    display: "gateway",
+    tokens: ["wi-fi gateway", "wifi gateway", "wireless gateway"],
+    skipIfMatched: ["security gateway"],
+  },
+  { label: "cable box", display: "cable box", tokens: ["cable box", "cable boxes"] },
+  { label: "TV box", display: "TV box", tokens: ["tv box", "tv boxes"] },
+  {
+    label: "set-top box",
+    display: "set-top box",
+    tokens: ["set-top box", "set top box", "settop box"],
+  },
+  { label: "DVR", display: "DVR", tokens: ["dvr", "dvrs"] },
+  { label: "receiver", display: "receiver", tokens: ["receiver", "receivers"] },
+  { label: "ONT", display: "ONT", tokens: ["ont", "optical network terminal"] },
+  { label: "fiber jack", display: "fiber jack", tokens: ["fiber jack"] },
+  { label: "camera", display: "camera", tokens: ["camera", "cameras"] },
+  {
+    label: "sensor",
+    display: "sensor",
+    tokens: ["sensor", "sensors", "door sensor", "window sensor"],
+  },
+  { label: "panel", display: "panel", tokens: ["panel", "panels", "control panel"] },
+  { label: "hub", display: "hub", tokens: ["hub", "hubs"] },
+  {
+    label: "range extender",
+    display: "range extender",
+    tokens: ["range extender", "extender", "wifi extender", "wi-fi extender"],
+  },
+  { label: "pod", display: "pod", tokens: ["pod", "pods"] },
+  {
+    label: "mesh unit",
+    display: "mesh unit",
+    tokens: ["mesh unit", "mesh device", "mesh devices", "mesh pod", "mesh pods", "mesh"],
+  },
+  { label: "dish", display: "dish", tokens: ["dish", "satellite dish", "dish receiver"] },
+  { label: "remote", display: "remote", tokens: ["remote", "remotes", "remote control", "remote controls"] },
+];
+
+const equipmentMatchers = equipmentCatalog.map((item) => ({
+  ...item,
+  patterns: item.tokens.map(
+    (token) =>
+      new RegExp(`\\b${escapeRegExp(token).replace(/\s+/g, "\\\\s+")}\\b`, "i")
+  ),
+}));
+
+const equipmentDetailPattern = new RegExp(
+  equipmentMatchers
+    .flatMap((item) => item.patterns.map((pattern) => pattern.source))
+    .join("|"),
+  "i"
+);
+
+const formatEquipmentList = (items) => {
+  if (!items.length) return "";
+  if (items.length === 1) return items[0];
+  if (items.length === 2) return `${items[0]} and ${items[1]}`;
+  return `${items.slice(0, -1).join(", ")}, and ${items[items.length - 1]}`;
+};
+
+const findMatchedEquipment = (text) => {
+  const matchedLabels = new Set();
+  const matches = [];
+
+  equipmentMatchers.forEach((item) => {
+    if (item.skipIfMatched?.some((label) => matchedLabels.has(label))) {
+      return;
+    }
+
+    let bestIndex = null;
+    item.patterns.forEach((pattern) => {
+      const match = pattern.exec(text);
+      if (match && (bestIndex === null || match.index < bestIndex)) {
+        bestIndex = match.index;
+      }
+    });
+
+    if (bestIndex !== null) {
+      matches.push({ display: item.display, index: bestIndex });
+      matchedLabels.add(item.label);
+    }
+  });
+
+  return matches
+    .sort((a, b) => a.index - b.index)
+    .map((match) => match.display)
+    .filter((value, index, array) => array.indexOf(value) === index);
+};
 
 const returnActionPattern = /(return|drop off|ship|send(?:ing)? back|mail(?:ing)? back|bring back)/i;
 
@@ -247,6 +345,13 @@ const extractEquipmentStatus = (input) => {
 
   if (/^(?:no|nope|none)(?:\b|$)/.test(lowered) || /already (?:sent|returned)/.test(lowered)) {
     return { kind: "final", text: "No equipment needs to be returned." };
+  }
+
+  const matchedEquipment = findMatchedEquipment(trimmed);
+  if (matchedEquipment.length) {
+    const list = formatEquipmentList(matchedEquipment);
+    const sentence = `Still have the ${list} to return.`;
+    return { kind: "final", text: sentence.charAt(0).toUpperCase() + sentence.slice(1) };
   }
 
   if (equipmentDetailPattern.test(lowered)) {
