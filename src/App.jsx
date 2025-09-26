@@ -486,12 +486,51 @@ const modes = {
   correctionSelect: "correction-select",
   correctionInput: "correction-input",
   completed: "completed",
+  handoffConfirm: "handoff-confirm",
   pongPending: "pong-pending",
   pong: "pong",
 };
 
 const closedChatResponse =
   "this chat is closed, to cancel again, please reload this page.";
+
+const isAffirmativeResponse = (value) => {
+  const normalized = value.trim().toLowerCase();
+  if (!normalized) {
+    return false;
+  }
+  const phrases = [
+    "yes",
+    "y",
+    "yep",
+    "yup",
+    "yeah",
+    "ya",
+    "sure",
+    "sure thing",
+    "ok",
+    "okay",
+    "of course",
+    "absolutely",
+    "please",
+    "please do",
+    "please continue",
+    "continue",
+    "go ahead",
+    "go for it",
+    "do it",
+    "affirmative",
+    "sounds good",
+    "let's do it",
+    "lets do it",
+    "let's continue",
+    "lets continue",
+    "yes please",
+  ];
+  return phrases.some(
+    (phrase) => normalized === phrase || normalized.startsWith(`${phrase} `)
+  );
+};
 
 export default function App() {
   const [messages, setMessages] = useState([]);
@@ -505,6 +544,7 @@ export default function App() {
   const [difficulty, setDifficulty] = useState(null);
   const [hardScenario, setHardScenario] = useState(() => getRandomHardScenario());
   const [agentName, setAgentName] = useState(() => getRandomAgentName());
+  const [handoffAgentName, setHandoffAgentName] = useState(null);
   const baseInitialMessages = useMemo(
     () => createInitialMessages(agentName),
     [agentName]
@@ -652,10 +692,10 @@ export default function App() {
     setStepIndex(0);
     setPendingField(null);
     setReasonConfirmFollowUp(null);
-    setMode(modes.collecting);
+    setMode(modes.handoffConfirm);
     setIsAgentTyping(true);
     const nextAgentName = getRandomAgentName(agentName);
-    setAgentName(nextAgentName);
+    setHandoffAgentName(nextAgentName);
     const closingAndIntroMessages = [
       {
         role: "agent",
@@ -663,13 +703,8 @@ export default function App() {
       },
       {
         role: "agent",
-        text: "Let's start fresh so I capture everything correctly.",
+        text: "I'll go ahead and close out my session. Do you still want to cancel?",
       },
-      {
-        role: "agent",
-        text: "I'll go ahead and close out my session so another teammate can step in.",
-      },
-      ...createInitialMessages(nextAgentName),
     ];
     scheduleAgentReplies(closingAndIntroMessages, { initialDelay: 900 });
   }, [
@@ -681,7 +716,7 @@ export default function App() {
     setPendingField,
     setStepIndex,
     setIsAgentTyping,
-    setAgentName,
+    setHandoffAgentName,
   ]);
 
   const scrollToEnd = useCallback(() => {
@@ -971,6 +1006,29 @@ export default function App() {
             nextPendingField = fieldKey;
           }
         }
+      } else if (mode === modes.handoffConfirm) {
+        if (isAffirmativeResponse(trimmed)) {
+          const nextAgent = handoffAgentName || getRandomAgentName(agentName);
+          agentReplies.push({
+            role: "agent",
+            text: "Thanks! Let me connect you with the next teammate now.",
+          });
+          const introMessages = createInitialMessages(nextAgent);
+          agentReplies.push(...introMessages);
+          setAgentName(nextAgent);
+          setHandoffAgentName(null);
+          updatedData = {};
+          dataChanged = true;
+          nextStepIndex = 0;
+          nextPendingField = null;
+          nextReasonConfirmFollowUp = null;
+          nextMode = modes.collecting;
+        } else {
+          agentReplies.push({
+            role: "agent",
+            text: "No problem—just let me know with a quick \"yes\" if you'd like to keep going.",
+          });
+        }
       } else if (mode === modes.correctionInput && pendingField) {
         const step = scriptByKey[pendingField];
         const extraction = step.extract(trimmed);
@@ -1037,7 +1095,9 @@ export default function App() {
       }
     },
     [
+      agentName,
       clearPongActivationTimeout,
+      handoffAgentName,
       difficulty,
       flushTypingQueue,
       formData,
@@ -1047,6 +1107,12 @@ export default function App() {
       reasonConfirmFollowUp,
       pushMessages,
       scheduleAgentReplies,
+      setAgentName,
+      setFormData,
+      setHandoffAgentName,
+      setPendingField,
+      setReasonConfirmFollowUp,
+      setStepIndex,
       stepIndex,
     ]
   );
