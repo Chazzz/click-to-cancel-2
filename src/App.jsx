@@ -428,6 +428,13 @@ const agentNames = [
   "Casey",
 ];
 
+const getRandomAgentName = (excludeName = null) => {
+  const available = agentNames.filter((name) => name !== excludeName);
+  const pool = available.length ? available : agentNames;
+  const randomIndex = Math.floor(Math.random() * pool.length);
+  return pool[randomIndex];
+};
+
 const createInitialMessages = (agentName) => [
   {
     role: "agent",
@@ -497,10 +504,7 @@ export default function App() {
   const [isAgentTyping, setIsAgentTyping] = useState(false);
   const [difficulty, setDifficulty] = useState(null);
   const [hardScenario, setHardScenario] = useState(() => getRandomHardScenario());
-  const agentName = useMemo(() => {
-    const randomIndex = Math.floor(Math.random() * agentNames.length);
-    return agentNames[randomIndex];
-  }, []);
+  const [agentName, setAgentName] = useState(() => getRandomAgentName());
   const baseInitialMessages = useMemo(
     () => createInitialMessages(agentName),
     [agentName]
@@ -650,28 +654,34 @@ export default function App() {
     setReasonConfirmFollowUp(null);
     setMode(modes.collecting);
     setIsAgentTyping(true);
-    scheduleAgentReplies(
-      [
-        {
-          role: "agent",
-          text: "Nice try! I took that round—those on-screen arrow buttons can be sneaky.",
-        },
-        {
-          role: "agent",
-          text: "Let's start fresh so I capture everything correctly.",
-        },
-        { role: "agent", text: cancellationScript[0].question },
-      ],
-      { initialDelay: 900 }
-    );
+    const nextAgentName = getRandomAgentName(agentName);
+    setAgentName(nextAgentName);
+    const closingAndIntroMessages = [
+      {
+        role: "agent",
+        text: "Nice try! I took that round—those on-screen arrow buttons can be sneaky.",
+      },
+      {
+        role: "agent",
+        text: "Let's start fresh so I capture everything correctly.",
+      },
+      {
+        role: "agent",
+        text: "I'll go ahead and close out my session so another teammate can step in.",
+      },
+      ...createInitialMessages(nextAgentName),
+    ];
+    scheduleAgentReplies(closingAndIntroMessages, { initialDelay: 900 });
   }, [
     clearPongActivationTimeout,
+    agentName,
     scheduleAgentReplies,
     setFormData,
     setMode,
     setPendingField,
     setStepIndex,
     setIsAgentTyping,
+    setAgentName,
   ]);
 
   const scrollToEnd = useCallback(() => {
