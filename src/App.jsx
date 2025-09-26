@@ -771,7 +771,7 @@ export default function App() {
         ) {
           agentReplies.push({
             role: "agent",
-            text: "Thanks for letting me know. Which specific equipment do you still have so I can match it to the account records?",
+            text: "Thanks for letting me know. Which specific equipment do you still have that needs to be returned?",
           });
         } else {
           const formatted = step.format(extraction);
