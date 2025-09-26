@@ -286,7 +286,7 @@ const equipmentMatchers = equipmentCatalog.map((item) => ({
   ...item,
   patterns: item.tokens.map(
     (token) =>
-      new RegExp(`\\b${escapeRegExp(token).replace(/\s+/g, "\\\\s+")}\\b`, "i")
+      new RegExp(`\\b${escapeRegExp(token).replace(/\s+/g, "\\s+")}\\b`, "i")
   ),
 }));
 
