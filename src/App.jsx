@@ -73,12 +73,37 @@ const extractServiceType = (input) => {
 const reasonCategories = [
   {
     label: "Moving",
-    match: (text) => /\b(move|relocat|relo|transferring|new (?:city|state|place|address)|out of (?:state|town)|relocation)\b/.test(text),
+    match: (text) => {
+      const patterns = [
+        /\bmove(?:d|s|rs?)?\b/, // move, moved, moves, mover(s)
+        /\bmoving\b/,
+        /\brelocat(?:e|ed|es|ing|ion|ions)\b/,
+        /\brelo\b/,
+        /\btransfer(?:red|ring|s)?\b/,
+        /\bnew (?:city|state|place|address)\b/,
+        /\bout of (?:state|town)\b/,
+      ];
+      return patterns.some((pattern) => pattern.test(text));
+    },
   },
   {
     label: "Price",
-    match: (text) =>
-      /\b(price|expens|cost|bill|rate|fee|fees|charge|promo|promotion|afford|increase|went up)\b/.test(text),
+    match: (text) => {
+      const patterns = [
+        /\bprice(?:s|y)?\b/,
+        /\bexpens\w*\b/,
+        /\bcost(?:s|ing)?\b/,
+        /\bbill(?:s|ing)?\b/,
+        /\brate(?:s)?\b/,
+        /\bfee(?:s)?\b/,
+        /\bcharge(?:s|d)?\b/,
+        /\bpromo(?:tion|s)?\b/,
+        /\bafford\w*\b/,
+        /\bincrease(?:d|s|ing)?\b/,
+        /\bwent up\b/,
+      ];
+      return patterns.some((pattern) => pattern.test(text));
+    },
   },
   {
     label: "Service issues",
