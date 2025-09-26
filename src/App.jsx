@@ -1093,9 +1093,16 @@ export default function App() {
           });
         }
       }
-      setMessages(startMessages);
+      setMessages([]);
+      scheduleAgentReplies(startMessages);
     },
-    [baseInitialMessages, clearPongActivationTimeout, flushTypingQueue, hardScenario]
+    [
+      baseInitialMessages,
+      clearPongActivationTimeout,
+      flushTypingQueue,
+      hardScenario,
+      scheduleAgentReplies,
+    ]
   );
 
   const isInputDisabled = !difficulty || mode === modes.pong || mode === modes.completed;
