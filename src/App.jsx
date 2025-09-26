@@ -232,20 +232,31 @@ const extractCancellationDate = (input) => {
   return null;
 };
 
+const equipmentDetailPattern =
+  /(modem|router|gateway|cable box|tv box|set-?top box|dvr|receiver|security gateway|ont|fiber jack|camera|sensor|panel|hub|extender|pod|mesh|dish|remote|box)/i;
+
+const returnActionPattern = /(return|drop off|ship|send(?:ing)? back|mail(?:ing)? back|bring back)/i;
+
+const affirmativeWithoutDetailsPattern =
+  /\b(yes|yep|yeah|yup|y|sure|affirmative|correct|i do|i still have|i think so|i believe so|still have it|still got it)\b/;
+
 const extractEquipmentStatus = (input) => {
   const trimmed = input.trim();
   if (!trimmed) return null;
   const lowered = trimmed.toLowerCase();
 
   if (/^(?:no|nope|none)(?:\b|$)/.test(lowered) || /already (?:sent|returned)/.test(lowered)) {
-    return "No equipment needs to be returned.";
+    return { kind: "final", text: "No equipment needs to be returned." };
   }
-  if (/^(?:yes|yep|yeah)(?:\b|$)/.test(lowered)) {
-    return "Customer still has equipment to return.";
-  }
-  if (/modem|router|box|equipment|device|return|drop off|ship/i.test(lowered)) {
+
+  if (equipmentDetailPattern.test(lowered)) {
     const sentence = trimmed.charAt(0).toUpperCase() + trimmed.slice(1);
-    return sentence.endsWith(".") ? sentence : `${sentence}.`;
+    const normalized = sentence.endsWith(".") ? sentence : `${sentence}.`;
+    return { kind: "final", text: normalized };
+  }
+
+  if (returnActionPattern.test(lowered) || affirmativeWithoutDetailsPattern.test(lowered)) {
+    return { kind: "needs-details" };
   }
 
   return null;
@@ -330,7 +341,7 @@ const cancellationScript = [
       "Please answer yes or no about having equipment, like \"no, nothing to return\" or \"yes, I still have the modem to send back.\"",
     acknowledge: (value) => `Thanks for confirming about the equipment: ${value}.`,
     extract: extractEquipmentStatus,
-    format: (value) => value,
+    format: (value) => (typeof value === "string" ? value : value?.text ?? ""),
   },
   {
     key: "contactMethod",
@@ -753,6 +764,15 @@ export default function App() {
         const extraction = step.extract(trimmed);
         if (!extraction) {
           addRetry(step);
+        } else if (
+          step.key === "equipmentStatus" &&
+          typeof extraction === "object" &&
+          extraction?.kind === "needs-details"
+        ) {
+          agentReplies.push({
+            role: "agent",
+            text: "Thanks for letting me know. Which specific equipment do you still have so I can match it to the account records?",
+          });
         } else {
           const formatted = step.format(extraction);
           const shouldValidateNow = step.key !== "cancellationReason";
