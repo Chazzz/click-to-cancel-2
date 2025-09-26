@@ -536,7 +536,7 @@ export default function App() {
         },
         {
           role: "agent",
-          text: "I'll submit the cancellation with those details and send a confirmation to your contact on file. Is there anything else I can do for you today?",
+          text: "I'll submit the cancellation with those details and send a confirmation to your contact on file. If you'd like to make another cancellation, please refresh to connect with a new agent.",
         },
         {
         role: "agent",
