@@ -444,7 +444,11 @@ const cancellationScript = [
       "I want to make sure we handle any equipment properly. Do you still have anything from us that needs to go back?",
     guidance:
       "Please answer yes or no about having equipment, like \"no, nothing to return\" or \"yes, I still have the modem to send back.\"",
-    acknowledge: (value) => `Thanks for confirming about the equipment: ${value}.`,
+    acknowledge: (value) => {
+      const stringValue = typeof value === "string" ? value : value ?? "";
+      const cleanedValue = stringValue.replace(/\.+$/, "").trim();
+      return `Thanks for confirming about the equipment: ${cleanedValue}.`;
+    },
     extract: extractEquipmentStatus,
     format: (value) => (typeof value === "string" ? value : value?.text ?? ""),
   },
