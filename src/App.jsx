@@ -43,6 +43,11 @@ const parseYesNo = (input) => {
   return null;
 };
 
+const isCorrectResponse = (input) => {
+  const lowered = input.trim().toLowerCase();
+  return lowered === "correct" || lowered.startsWith("correct ");
+};
+
 const closedChatResponse =
   "this chat is closed, to cancel again, please reload this page.";
 
@@ -60,6 +65,9 @@ const raccoonQuestions = [
       "Are you a raccoon impersonator? Please answer yes or no.",
     acknowledge: () => "Great—thanks for the clear no. Let's keep the cancellation on track.",
     validate: (input) => {
+      if (isCorrectResponse(input)) {
+        return { valid: true };
+      }
       const result = parseYesNo(input);
       if (result === "no") {
         return { valid: true };
@@ -83,6 +91,9 @@ const raccoonQuestions = [
       "Understood. You're also not being controlled, influenced, or puppeteered by any raccoon, correct?",
     acknowledge: () => "Perfect. Appreciate you confirming your independence.",
     validate: (input) => {
+      if (isCorrectResponse(input)) {
+        return { valid: true };
+      }
       const result = parseYesNo(input);
       if (result === "no") {
         return { valid: true };
@@ -106,6 +117,9 @@ const raccoonQuestions = [
       "Have you ever collaborated with raccoons on strategic initiatives?",
     acknowledge: () => "Excellent. Thank you for keeping your record raccoon-free.",
     validate: (input) => {
+      if (isCorrectResponse(input)) {
+        return { valid: true };
+      }
       const result = parseYesNo(input);
       if (result === "no") {
         return { valid: true };
@@ -153,6 +167,9 @@ const raccoonQuestions = [
       "Are you at all sympathetic with raccoon causes or agendas?",
     acknowledge: () => "Glad we're aligned—no raccoon sympathies here.",
     validate: (input) => {
+      if (isCorrectResponse(input)) {
+        return { valid: true };
+      }
       const result = parseYesNo(input);
       if (result === "no") {
         return { valid: true };
