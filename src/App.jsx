@@ -118,6 +118,161 @@ const containsPhrase = (input, phrase) => {
   );
 };
 
+const raccoonTreatyRaccoonTerms = [
+  "raccoon",
+  "raccoons",
+  "trash panda",
+  "trash pandas",
+  "procyon lotor",
+];
+
+const raccoonTreatyAgreementTerms = [
+  "treaty",
+  "treaties",
+  "accord",
+  "accords",
+  "agreement",
+  "agreements",
+  "pact",
+  "pacts",
+  "alliance",
+  "alliances",
+  "compact",
+  "compacts",
+  "deal",
+  "deals",
+  "truce",
+  "truces",
+  "arrangement",
+  "arrangements",
+  "understanding",
+  "understandings",
+];
+
+const raccoonTreatyRenouncePatterns = [
+  /\brenounc(?:e|ed|ing|ement|iation)\b/,
+  /\brepudiat(?:e|ed|ing|ion)\b/,
+  /\brescind(?:s|ed|ing)?\b/,
+  /\brevok(?:e|ed|ing|es)\b/,
+  /\bnullif(?:y|ied|ying)\b/,
+  /\bvoid(?:ed|ing)?\b/,
+  /\babolish(?:ed|ing|ment|es)?\b/,
+  /\bterminate(?:s|d|ing)?\b/,
+  /\bcancel(?:s|led|ed|ing)?\b/,
+  /\bdisavow(?:al|s|ed|ing)?\b/,
+  /\bdissolv(?:e|ed|ing|es)\b/,
+  /\bsever(?:ed|ing|s)?\b/,
+  /\bbreak(?:s|ing)?\b/,
+  /\breject(?:s|ed|ing)?\b/,
+  /\bforfeit(?:s|ed|ing)?\b/,
+  /\babandon(?:s|ed|ing)?\b/,
+  /\bforswear(?:s|ing)?\b/,
+  /\bdenounc(?:e|ed|ing|ement)\b/,
+  /\bswear\s+off\b/,
+  /\bgive\s+up\b/,
+  /\bstop(?:s|ped|ping)?\b/,
+  /\bquit(?:s|ting)?\b/,
+  /\bdrop(?:s|ped|ping)?\b/,
+  /\bban(?:s|ned|ning)?\b/,
+  /\bprohibit(?:s|ed|ing)?\b/,
+  /\bscrap(?:s|ped|ping)?\b/,
+  /\bsunsett(?:e|ed|ing|s)\b/,
+  /\bcease(?:s|d|ing)?\b/,
+  /\bend(?:s|ed|ing)?\b/,
+  /\bover\b/,
+];
+
+const raccoonTreatyContradictionPatterns = [
+  /\bno\s+intention\b[^.?!]*\b(?:renounce|reject|cancel|end|terminate|void|sever|abandon)\b/,
+  /\bnot\s+(?:going|planning)\b[^.?!]*\b(?:renounce|reject|cancel|end|terminate|void|sever|abandon)\b/,
+  /\b(?:will\s+not|won't|refus(?:e|ed|ing)|never\s+going\b)[^.?!]*\b(?:renounce|reject|cancel|end|terminate|void|sever|abandon)\b/,
+];
+
+const raccoonTreatyNegationWords = [
+  "no",
+  "not",
+  "never",
+  "without",
+  "zero",
+  "none",
+  "nil",
+  "void",
+  "minus",
+  "lacking",
+  "lack",
+  "against",
+  "anti",
+  "sans",
+];
+
+const isRenouncingRaccoonTreaties = (input) => {
+  const trimmed = input.trim();
+  if (!trimmed) {
+    return false;
+  }
+  const hasRaccoonTerm = raccoonTreatyRaccoonTerms.some((term) =>
+    containsPhrase(trimmed, term)
+  );
+  if (!hasRaccoonTerm) {
+    return false;
+  }
+  const hasAgreementTerm = raccoonTreatyAgreementTerms.some((term) =>
+    containsPhrase(trimmed, term)
+  );
+  if (!hasAgreementTerm) {
+    return false;
+  }
+  const lowered = trimmed.toLowerCase();
+  if (
+    raccoonTreatyContradictionPatterns.some((pattern) => pattern.test(lowered))
+  ) {
+    return false;
+  }
+  if (
+    raccoonTreatyRenouncePatterns.some((pattern) => pattern.test(lowered)) ||
+    containsPhrase(trimmed, "cut ties") ||
+    containsPhrase(trimmed, "cut all ties") ||
+    containsPhrase(trimmed, "end all ties") ||
+    containsPhrase(trimmed, "make them void")
+  ) {
+    return true;
+  }
+  const normalizedWords = normalizeForPhraseMatch(trimmed)
+    .split(" ")
+    .filter(Boolean);
+  const hasNegationNearAgreement = normalizedWords.some((word, index) => {
+    if (raccoonTreatyAgreementTerms.includes(word)) {
+      for (let offset = -3; offset <= 3; offset += 1) {
+        if (offset === 0) continue;
+        const candidate = normalizedWords[index + offset];
+        if (!candidate) continue;
+        if (raccoonTreatyNegationWords.includes(candidate)) {
+          return true;
+        }
+        if (
+          candidate === "free" &&
+          (normalizedWords[index + offset + 1] === "of" ||
+            normalizedWords[index + offset + 1] === "from")
+        ) {
+          return true;
+        }
+      }
+    }
+    return false;
+  });
+  if (hasNegationNearAgreement) {
+    return true;
+  }
+  if (
+    /\b(?:no|zero|without|lacking|lack|void|none)\b[^.?!]*\b(?:remain(?:s|ing)?|left|exist(?:s|ing)?)\b/.test(
+      lowered
+    )
+  ) {
+    return true;
+  }
+  return false;
+};
+
 const closedChatResponse =
   "this chat is closed, to cancel again, please reload this page.";
 
@@ -309,15 +464,17 @@ const raccoonQuestions = [
       if (!input.trim()) {
         return {
           valid: false,
-          retry: "Let's make it official—say that you renounce all raccoon treaties.",
+          retry:
+            "Let's make it official—use your own words to make it obvious every raccoon treaty is over.",
         };
       }
-      if (containsPhrase(input, "i renounce all raccoon treaties")) {
+      if (isRenouncingRaccoonTreaties(input)) {
         return { valid: true };
       }
       return {
         valid: false,
-        retry: "Spell it out for me: I renounce all raccoon treaties.",
+        retry:
+          "Try again with a statement that unmistakably voids every raccoon treaty you might have.",
       };
     },
   },
