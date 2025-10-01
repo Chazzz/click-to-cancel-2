@@ -45,7 +45,11 @@ const parseYesNo = (input) => {
 
 const isCorrectResponse = (input) => {
   const lowered = input.trim().toLowerCase();
-  return lowered === "correct" || lowered.startsWith("correct ");
+  if (!lowered) {
+    return false;
+  }
+  const sanitized = lowered.replace(/[.!?]+$/, "");
+  return /^(?:that's|that is)?\s*correct(?:\b|$)/.test(sanitized);
 };
 
 const closedChatResponse =
@@ -102,7 +106,7 @@ const raccoonQuestions = [
         return {
           valid: false,
           retry:
-            "If a raccoon is steering your decisions, I have to halt the cancellation. Otherwise, make it clear you're acting on your own.",
+            "I need a definitive statement that you're the one making the call—give me something unmistakably independent.",
         };
       }
       return {
