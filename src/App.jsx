@@ -12,6 +12,9 @@ const yesWords = [
   "indeed",
   "absolutely",
   "certainly",
+  "definitely",
+  "without a doubt",
+  "by all means",
   "please do",
   "go ahead",
   "that is correct",
@@ -29,15 +32,59 @@ const noWords = [
   "absolutely not",
   "certainly not",
   "never",
+  "no way",
+  "not really",
 ];
+
+const yesPatterns = [
+  /\b(i am|i'm) human\b/,
+  /\b(of course|for sure|sounds good)\b/,
+  /\ball good\b/,
+];
+
+const noPatterns = [
+  /\b(i am|i'm) not\b/,
+  /\bno thanks\b/,
+  /\bno way\b/,
+  /\bi would never\b/,
+];
+
+const normalizeForPhraseMatch = (input) =>
+  input
+    .toLowerCase()
+    .replace(/[^a-z0-9]+/g, " ")
+    .replace(/\s+/g, " ")
+    .trim();
+
+const matchesWord = (text, word) => {
+  const normalizedText = normalizeForPhraseMatch(text);
+  const normalizedWord = normalizeForPhraseMatch(word);
+  if (!normalizedText || !normalizedWord) {
+    return false;
+  }
+  if (normalizedText === normalizedWord) {
+    return true;
+  }
+  return (
+    normalizedText.startsWith(`${normalizedWord} `) ||
+    normalizedText.endsWith(` ${normalizedWord}`) ||
+    normalizedText.includes(` ${normalizedWord} `)
+  );
+};
 
 const parseYesNo = (input) => {
   const lowered = input.trim().toLowerCase();
   if (!lowered) return null;
-  if (yesWords.some((word) => lowered === word || lowered.startsWith(`${word} `))) {
+  if (
+    yesWords.some((word) => matchesWord(lowered, word)) ||
+    yesPatterns.some((pattern) => pattern.test(lowered))
+  ) {
     return "yes";
   }
-  if (noWords.some((word) => lowered === word || lowered.startsWith(`${word} `))) {
+  if (
+    noWords.some((word) => matchesWord(lowered, word)) ||
+    noPatterns.some((pattern) => pattern.test(lowered))
+  ) {
     return "no";
   }
   return null;
@@ -49,7 +96,26 @@ const isCorrectResponse = (input) => {
     return false;
   }
   const sanitized = lowered.replace(/[.!?]+$/, "");
-  return /^(?:that's|that is)?\s*correct(?:\b|$)/.test(sanitized);
+  if (/(?:in|un)correct/.test(sanitized) || /not\s+correct/.test(sanitized)) {
+    return false;
+  }
+  return /\bcorrect\b/.test(sanitized);
+};
+
+const containsPhrase = (input, phrase) => {
+  const normalizedInput = normalizeForPhraseMatch(input);
+  const normalizedPhrase = normalizeForPhraseMatch(phrase);
+  if (!normalizedInput || !normalizedPhrase) {
+    return false;
+  }
+  if (normalizedInput === normalizedPhrase) {
+    return true;
+  }
+  return (
+    normalizedInput.startsWith(`${normalizedPhrase} `) ||
+    normalizedInput.endsWith(` ${normalizedPhrase}`) ||
+    normalizedInput.includes(` ${normalizedPhrase} `)
+  );
 };
 
 const closedChatResponse =
@@ -67,7 +133,7 @@ const raccoonQuestions = [
     key: "notRaccoon",
     prompt:
       "Are you a raccoon impersonator? Please answer yes or no.",
-    acknowledge: () => "Great—thanks for the clear no. Let's keep the cancellation on track.",
+    acknowledge: () => "Great—thanks for the clear answer. Let's keep the cancellation on track.",
     validate: (input) => {
       if (isCorrectResponse(input)) {
         return { valid: true };
@@ -217,66 +283,63 @@ const raccoonQuestions = [
   {
     key: "motto",
     prompt:
-      "State the official anti-raccoon motto by replying with \"Humans for human cancellations\".",
+      "State the official anti-raccoon motto. A hint: it celebrates humans handling their own cancellations.",
     acknowledge: () => "Exactly. Humans for human cancellations—no raccoons allowed.",
     validate: (input) => {
-      const normalized = input.trim().toLowerCase();
-      if (!normalized) {
+      if (!input.trim()) {
         return {
           valid: false,
-          retry: "Please type out the full motto: Humans for human cancellations.",
+          retry: "Please include the motto that centers humans handling their own cancellations.",
         };
       }
-      if (normalized === "humans for human cancellations") {
+      if (containsPhrase(input, "humans for human cancellations")) {
         return { valid: true };
       }
       return {
         valid: false,
-        retry: "Close, but I need the exact phrase: Humans for human cancellations.",
+        retry: "Close, but I still need to hear \"Humans for human cancellations\" in your response.",
       };
     },
   },
   {
     key: "treaty",
     prompt:
-      "Please renounce any raccoon treaties by typing \"I renounce all raccoon treaties\".",
+      "Please renounce any raccoon treaties—use language that clearly states you renounce all raccoon treaties.",
     acknowledge: () => "Treaties renounced. Legal raccoon ties are now severed.",
     validate: (input) => {
-      const normalized = input.trim().toLowerCase();
-      if (!normalized) {
+      if (!input.trim()) {
         return {
           valid: false,
-          retry: "Let's make it official—type \"I renounce all raccoon treaties\".",
+          retry: "Let's make it official—say that you renounce all raccoon treaties.",
         };
       }
-      if (normalized === "i renounce all raccoon treaties") {
+      if (containsPhrase(input, "i renounce all raccoon treaties")) {
         return { valid: true };
       }
       return {
         valid: false,
-        retry: "I need the exact wording: I renounce all raccoon treaties.",
+        retry: "Spell it out for me: I renounce all raccoon treaties.",
       };
     },
   },
   {
     key: "override",
     prompt:
-      "Finally, enter the emergency override code \"NO RACCOONS\" to finalize your cancellation.",
+      "Finally, provide the emergency override code—you're looking for the words \"NO RACCOONS\" in that order.",
     acknowledge: () => "Override accepted. Raccoon lockdown protocols satisfied.",
     validate: (input) => {
-      const normalized = input.trim().toUpperCase();
-      if (!normalized) {
+      if (!input.trim()) {
         return {
           valid: false,
-          retry: "Please type the override code exactly as \"NO RACCOONS\".",
+          retry: "Type the override phrase that makes it clear there are NO RACCOONS involved.",
         };
       }
-      if (normalized === "NO RACCOONS") {
+      if (containsPhrase(input, "no raccoons")) {
         return { valid: true };
       }
       return {
         valid: false,
-        retry: "Almost there—please respond with the exact phrase \"NO RACCOONS\".",
+        retry: "You'll need to explicitly mention \"NO RACCOONS\" to finalize.",
       };
     },
   },
@@ -428,7 +491,7 @@ export default function App() {
           } else {
             agentReplies.push({
               role: "agent",
-              text: question.acknowledge(result.value ?? null),
+              text: question.acknowledge(result.value ?? trimmed),
             });
             const nextIndex = currentQuestionIndex + 1;
             setCurrentQuestionIndex(nextIndex);
