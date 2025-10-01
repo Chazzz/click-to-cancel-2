@@ -209,8 +209,7 @@ const raccoonQuestions = [
   },
   {
     key: "favoriteAnimal",
-    prompt:
-      "What's your favorite animal? Pick anything other than a raccoon or trash panda.",
+    prompt: "What's your favorite animal?",
     acknowledge: (value) => `Nice choice—${value} is a raccoon-free favorite.`,
     validate: (input) => {
       const trimmed = input.trim();
