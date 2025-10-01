@@ -58,8 +58,7 @@ const raccoonQuestions = [
     key: "notRaccoon",
     prompt:
       "Before we begin, please confirm you are not a raccoon. Reply \"yes\" to confirm.",
-    acknowledge: () =>
-      "Great—no raccoon fur detected. Let's keep the cancellation on track.",
+    acknowledge: () => "Great—thanks for confirming. Let's keep the cancellation on track.",
     validate: (input) => {
       const result = parseYesNo(input);
       if (result === "yes") {
@@ -82,7 +81,7 @@ const raccoonQuestions = [
     key: "notControlled",
     prompt:
       "Understood. You're also not being controlled, influenced, or puppeteered by any raccoon, correct? Please answer \"no\".",
-    acknowledge: () => "Perfect. No raccoon puppet strings detected.",
+    acknowledge: () => "Perfect. Appreciate you confirming your independence.",
     validate: (input) => {
       const result = parseYesNo(input);
       if (result === "no") {
@@ -105,7 +104,7 @@ const raccoonQuestions = [
     key: "noAllies",
     prompt:
       "Have you ever collaborated with raccoons on strategic initiatives? Please answer \"no\" to proceed.",
-    acknowledge: () => "Excellent. Zero raccoon alliances on record.",
+    acknowledge: () => "Excellent. Thank you for keeping your record raccoon-free.",
     validate: (input) => {
       const result = parseYesNo(input);
       if (result === "no") {
@@ -152,7 +151,7 @@ const raccoonQuestions = [
     key: "sympathy",
     prompt:
       "Are you at all sympathetic with raccoon causes or agendas? Please answer \"no\".",
-    acknowledge: () => "Glad we're aligned—no raccoon sympathies detected.",
+    acknowledge: () => "Glad we're aligned—no raccoon sympathies here.",
     validate: (input) => {
       const result = parseYesNo(input);
       if (result === "no") {
@@ -479,7 +478,7 @@ export default function App() {
     <div className="app">
       <header className="app__header">
         <h1>Cancellation Assistant</h1>
-        <p className="app__subtitle">First we make sure no raccoons are involved.</p>
+        <p className="app__subtitle">the most efficient way to cancel, guaranteed</p>
       </header>
       <main className="chat" aria-live="polite">
         <ul className="chat__messages">
