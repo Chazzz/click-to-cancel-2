@@ -1,559 +1,266 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
-import PongChallenge from "./PongChallenge";
-
-const monthNames = [
-  "january",
-  "february",
-  "march",
-  "april",
-  "may",
-  "june",
-  "july",
-  "august",
-  "september",
-  "october",
-  "november",
-  "december",
-];
-
-const capitalizeWords = (value) =>
-  value
-    .toLowerCase()
-    .split(/\s+/)
-    .filter(Boolean)
-    .map((word) => word.charAt(0).toUpperCase() + word.slice(1))
-    .join(" ");
-
-const escapeRegExp = (value) => value.replace(/[-/\\^$*+?.()|[\]{}]/g, "\\$&");
-
-const formatDate = (date) =>
-  date.toLocaleDateString("en-US", {
-    month: "long",
-    day: "numeric",
-    year: "numeric",
-  });
-
-const extractAccountName = (input) => {
-  const cleaned = input.replace(/[^a-zA-Z\s'\-.]/g, " ").replace(/\s+/g, " ").trim();
-  if (!cleaned) return null;
-  const words = cleaned
-    .split(" ")
-    .filter(Boolean)
-    .map((word) => {
-      if (/^(mc)([a-z])/i.test(word)) {
-        return word.replace(/^mc([a-z])(.+)/i, (_, first, rest) => `Mc${first.toUpperCase()}${rest.toLowerCase()}`);
-      }
-      return word.charAt(0).toUpperCase() + word.slice(1).toLowerCase();
-    });
-  if (!words.length) return null;
-  return words.join(" ");
-};
-
-const extractServiceType = (input) => {
-  const trimmed = input.trim();
-  if (!trimmed) return null;
-  const lowered = trimmed.toLowerCase();
-  const options = [
-    { label: "Internet", patterns: ["internet", "wifi", "broadband"] },
-    { label: "Cable TV", patterns: ["tv", "television", "cable"] },
-    { label: "Mobile phone", patterns: ["mobile", "cell", "wireless", "cellphone", "cell phone"] },
-    { label: "Home phone", patterns: ["landline", "home phone", "voip", "phone line"] },
-    { label: "Security system", patterns: ["security", "alarm", "monitoring"] },
-    { label: "Streaming", patterns: ["stream", "app", "channel"] },
-  ];
-
-  for (const option of options) {
-    if (option.patterns.some((pattern) => lowered.includes(pattern))) {
-      return option.label;
-    }
-  }
-
-  if (trimmed.length < 3) return null;
-  return capitalizeWords(trimmed);
-};
-
-const reasonCategories = [
-  {
-    label: "Moving",
-    match: (text) => {
-      const patterns = [
-        /\bmove(?:d|s|rs?)?\b/, // move, moved, moves, mover(s)
-        /\bmoving\b/,
-        /\brelocat(?:e|ed|es|ing|ion|ions)\b/,
-        /\brelo\b/,
-        /\btransfer(?:red|ring|s)?\b/,
-        /\bnew (?:city|state|place|address)\b/,
-        /\bout of (?:state|town)\b/,
-      ];
-      return patterns.some((pattern) => pattern.test(text));
-    },
-  },
-  {
-    label: "Price",
-    match: (text) => {
-      const patterns = [
-        /\bprice(?:s|y)?\b/,
-        /\bexpens\w*\b/,
-        /\bcost(?:s|ing)?\b/,
-        /\bbill(?:s|ing)?\b/,
-        /\brate(?:s)?\b/,
-        /\bfee(?:s)?\b/,
-        /\bcharge(?:s|d)?\b/,
-        /\bpromo(?:tion|s)?\b/,
-        /\bafford\w*\b/,
-        /\bincrease(?:d|s|ing)?\b/,
-        /\bwent up\b/,
-      ];
-      return patterns.some((pattern) => pattern.test(text));
-    },
-  },
-  {
-    label: "Service issues",
-    match: (text) =>
-      /(outage|issue|problem|slow|lag|buffer|disconnect|drop|unstable|speed|quality|reliab|tech support)/.test(text),
-  },
-  {
-    label: "Switching providers",
-    match: (text) => {
-      const providerKeywords = [
-        "switch",
-        "changing",
-        "going with",
-        "moving to",
-        "signed up",
-        "new provider",
-        "competitor",
-        "comcast",
-        "xfinity",
-        "spectrum",
-        "verizon",
-        "att",
-        "a t t",
-        "t-mobile",
-        "tmobile",
-        "google fiber",
-        "cox",
-        "starlink",
-        "dish",
-        "directv",
-      ];
-      return providerKeywords.some((keyword) => text.includes(keyword));
-    },
-  },
-  {
-    label: "Not using the service",
-    match: (text) =>
-      /(not (?:using|need)|no longer need|rarely use|hardly use|vacation home|seasonal|short-term|short term|temporary|airbnb|rental property)/.test(
-        text
-      ),
-  },
-  {
-    label: "Customer service concerns",
-    match: (text) => /(customer service|support|representative|agent|rude|experience|complaint|hold time)/.test(text),
-  },
-  {
-    label: "Contract or policy",
-    match: (text) => /(contract|agreement|policy|terms|termination fee|penalty|commitment|early termination)/.test(text),
-  },
-];
-
-const reasonOptionList = reasonCategories.map((category) => category.label).join(", ");
-
-const extractReason = (input) => {
-  const trimmed = input.trim();
-  if (trimmed.length < 3) return null;
-  const normalized = trimmed.toLowerCase();
-  const category = reasonCategories.find((option) => option.match(normalized));
-  return {
-    option: category ? category.label : "Other",
-    original: trimmed.replace(/\s+/g, " "),
-  };
-};
-
-const extractCancellationDate = (input) => {
-  const trimmed = input.trim();
-  if (!trimmed) return null;
-  const lowered = trimmed.toLowerCase();
-  const now = new Date();
-
-  if (lowered === "now" || /^right now$/.test(lowered)) {
-    return formatDate(now);
-  }
-  if (/asap|soon|immediately/.test(lowered)) {
-    return "As soon as possible";
-  }
-  if (/today/.test(lowered)) {
-    return formatDate(now);
-  }
-  if (/tomorrow/.test(lowered)) {
-    const tomorrow = new Date(now.getTime() + 24 * 60 * 60 * 1000);
-    return formatDate(tomorrow);
-  }
-  if (/next (billing|cycle)/.test(lowered)) {
-    return "Next billing cycle";
-  }
-  if (/end of (?:the )?month/.test(lowered)) {
-    return "End of the month";
-  }
-
-  const monthRegex = new RegExp(
-    `\\b(${monthNames.join("|")})\\s+(\\d{1,2})(?:st|nd|rd|th)?(?:,?\\s*(\\d{4}))?`,
-    "i"
-  );
-  const monthMatch = trimmed.match(monthRegex);
-  if (monthMatch) {
-    const [, monthName, day, year] = monthMatch;
-    const monthIndex = monthNames.indexOf(monthName.toLowerCase());
-    const parsedYear = year ? parseInt(year, 10) : now.getFullYear();
-    const parsedDay = parseInt(day, 10);
-    if (!Number.isNaN(parsedDay) && monthIndex >= 0) {
-      const parsedDate = new Date(parsedYear, monthIndex, parsedDay);
-      if (!Number.isNaN(parsedDate.getTime())) {
-        return formatDate(parsedDate);
-      }
-    }
-  }
-
-  const numericMatch = trimmed.match(/(\d{1,2})[\/\-](\d{1,2})(?:[\/\-](\d{2,4}))?/);
-  if (numericMatch) {
-    const [, month, day, year] = numericMatch;
-    const monthNumber = parseInt(month, 10) - 1;
-    const dayNumber = parseInt(day, 10);
-    const yearNumber = year ? parseInt(year.length === 2 ? `20${year}` : year, 10) : now.getFullYear();
-    const parsedDate = new Date(yearNumber, monthNumber, dayNumber);
-    if (!Number.isNaN(parsedDate.getTime())) {
-      return formatDate(parsedDate);
-    }
-  }
-
-  const parsed = Date.parse(trimmed);
-  if (!Number.isNaN(parsed)) {
-    return formatDate(new Date(parsed));
-  }
-
-  return null;
-};
-
-const equipmentCatalog = [
-  { label: "modem", display: "modem", tokens: ["modem", "modems"] },
-  { label: "router", display: "router", tokens: ["router", "routers"] },
-  {
-    label: "security gateway",
-    display: "security gateway",
-    tokens: ["security gateway", "security gateways"],
-  },
-  {
-    label: "gateway",
-    display: "gateway",
-    tokens: ["wi-fi gateway", "wifi gateway", "wireless gateway"],
-    skipIfMatched: ["security gateway"],
-  },
-  { label: "cable box", display: "cable box", tokens: ["cable box", "cable boxes"] },
-  { label: "TV box", display: "TV box", tokens: ["tv box", "tv boxes"] },
-  {
-    label: "set-top box",
-    display: "set-top box",
-    tokens: ["set-top box", "set top box", "settop box"],
-  },
-  { label: "DVR", display: "DVR", tokens: ["dvr", "dvrs"] },
-  { label: "receiver", display: "receiver", tokens: ["receiver", "receivers"] },
-  { label: "ONT", display: "ONT", tokens: ["ont", "optical network terminal"] },
-  { label: "fiber jack", display: "fiber jack", tokens: ["fiber jack"] },
-  { label: "camera", display: "camera", tokens: ["camera", "cameras"] },
-  {
-    label: "sensor",
-    display: "sensor",
-    tokens: ["sensor", "sensors", "door sensor", "window sensor"],
-  },
-  { label: "panel", display: "panel", tokens: ["panel", "panels", "control panel"] },
-  { label: "hub", display: "hub", tokens: ["hub", "hubs"] },
-  {
-    label: "range extender",
-    display: "range extender",
-    tokens: ["range extender", "extender", "wifi extender", "wi-fi extender"],
-  },
-  { label: "pod", display: "pod", tokens: ["pod", "pods"] },
-  {
-    label: "mesh unit",
-    display: "mesh unit",
-    tokens: ["mesh unit", "mesh device", "mesh devices", "mesh pod", "mesh pods", "mesh"],
-  },
-  { label: "dish", display: "dish", tokens: ["dish", "satellite dish", "dish receiver"] },
-  { label: "remote", display: "remote", tokens: ["remote", "remotes", "remote control", "remote controls"] },
-];
-
-const equipmentMatchers = equipmentCatalog.map((item) => ({
-  ...item,
-  patterns: item.tokens.map(
-    (token) =>
-      new RegExp(`\\b${escapeRegExp(token).replace(/\s+/g, "\\s+")}\\b`, "i")
-  ),
-}));
-
-const equipmentDetailPattern = new RegExp(
-  equipmentMatchers
-    .flatMap((item) => item.patterns.map((pattern) => pattern.source))
-    .join("|"),
-  "i"
-);
-
-const formatEquipmentList = (items) => {
-  if (!items.length) return "";
-  if (items.length === 1) return items[0];
-  if (items.length === 2) return `${items[0]} and ${items[1]}`;
-  return `${items.slice(0, -1).join(", ")}, and ${items[items.length - 1]}`;
-};
-
-const findMatchedEquipment = (text) => {
-  const matchedLabels = new Set();
-  const matches = [];
-
-  equipmentMatchers.forEach((item) => {
-    if (item.skipIfMatched?.some((label) => matchedLabels.has(label))) {
-      return;
-    }
-
-    let bestIndex = null;
-    item.patterns.forEach((pattern) => {
-      const match = pattern.exec(text);
-      if (match && (bestIndex === null || match.index < bestIndex)) {
-        bestIndex = match.index;
-      }
-    });
-
-    if (bestIndex !== null) {
-      matches.push({ display: item.display, index: bestIndex });
-      matchedLabels.add(item.label);
-    }
-  });
-
-  return matches
-    .sort((a, b) => a.index - b.index)
-    .map((match) => match.display)
-    .filter((value, index, array) => array.indexOf(value) === index);
-};
-
-const returnActionPattern = /(return|drop off|ship|send(?:ing)? back|mail(?:ing)? back|bring back)/i;
-
-const affirmativeWithoutDetailsPattern =
-  /\b(yes|yep|yeah|yup|y|sure|affirmative|correct|i do|i still have|i think so|i believe so|still have it|still got it)\b/;
-
-const extractEquipmentStatus = (input) => {
-  const trimmed = input.trim();
-  if (!trimmed) return null;
-  const lowered = trimmed.toLowerCase();
-
-  if (/^(?:no|nope|none)(?:\b|$)/.test(lowered) || /already (?:sent|returned)/.test(lowered)) {
-    return { kind: "final", text: "No equipment needs to be returned." };
-  }
-
-  const matchedEquipment = findMatchedEquipment(trimmed);
-  if (matchedEquipment.length) {
-    const list = formatEquipmentList(matchedEquipment);
-    const sentence = `Still have the ${list} to return.`;
-    return { kind: "final", text: sentence.charAt(0).toUpperCase() + sentence.slice(1) };
-  }
-
-  if (equipmentDetailPattern.test(lowered)) {
-    const sentence = trimmed.charAt(0).toUpperCase() + trimmed.slice(1);
-    const normalized = sentence.endsWith(".") ? sentence : `${sentence}.`;
-    return { kind: "final", text: normalized };
-  }
-
-  if (returnActionPattern.test(lowered) || affirmativeWithoutDetailsPattern.test(lowered)) {
-    return { kind: "needs-details" };
-  }
-
-  return null;
-};
-
-const formatPhoneNumber = (value) => {
-  const digits = value.replace(/\D/g, "");
-  if (digits.length === 10) {
-    return `(${digits.slice(0, 3)}) ${digits.slice(3, 6)}-${digits.slice(6)}`;
-  }
-  if (digits.length === 11 && digits.startsWith("1")) {
-    return `+1 (${digits.slice(1, 4)}) ${digits.slice(4, 7)}-${digits.slice(7)}`;
-  }
-  return value.trim();
-};
-
-const extractContactMethod = (input) => {
-  const trimmed = input.trim();
-  if (!trimmed) return null;
-  const emailMatch = trimmed.match(/[A-Z0-9._%+-]+@[A-Z0-9.-]+\.[A-Z]{2,}/i);
-  if (emailMatch) {
-    return emailMatch[0].toLowerCase();
-  }
-  const phoneMatch = trimmed.match(/\+?\d[\d\s().-]{6,}\d/);
-  if (phoneMatch) {
-    return formatPhoneNumber(phoneMatch[0]);
-  }
-  return null;
-};
-
-const cancellationScript = [
-  {
-    key: "accountName",
-    label: "account holder's name",
-    question: "To get started, could I have the full name on the account?",
-    retry:
-      "I'm sorry, I want to make sure I have the account holder's full name exactly as it appears on the account. Could you share it again?",
-    guidance: "Please reply with the complete first and last name on the account, without extra details.",
-    acknowledge: (value) => `Thanks, ${value}. I've noted the account holder's name.`,
-    extract: extractAccountName,
-    format: (value) => value,
-  },
-  {
-    key: "serviceType",
-    label: "service you're cancelling",
-    question: "Which service are you looking to cancel today (internet, TV, mobile, etc.)?",
-    retry:
-      "Just to confirm, which of your services should I cancel—like internet, TV, or wireless?",
-    guidance: "Let me know the single service type, such as \"internet\", \"cable TV\", or \"mobile phone\".",
-    acknowledge: (value) => `Got it—you'd like to cancel your ${value} service.`,
-    extract: extractServiceType,
-    format: (value) => value,
-  },
-  {
-    key: "cancellationReason",
-    label: "cancellation reason",
-    question: "What's the main reason you're looking to cancel?",
-    retry: "I want to be sure I capture the reason correctly. Could you tell me a bit more about why you're cancelling?",
-    guidance: "A short explanation like \"moving out of state\" or \"too expensive\" works great.",
-    acknowledge: (value) => `Thanks for the context—I've noted that you're cancelling because ${value}.`,
-    extract: extractReason,
-    format: (value) => value.option,
-  },
-  {
-    key: "cancellationDate",
-    label: "cancellation date",
-    question: "When would you like the cancellation to take effect?",
-    retry: "I'm not sure I caught the date you prefer. Could you share the exact day you'd like us to schedule the cancellation?",
-    guidance:
-      "You can give a specific date like \"March 15\" or use timing such as \"next billing cycle\" or \"as soon as possible\".",
-    acknowledge: (value) => `Understood. I'll target ${value} for the cancellation.`,
-    extract: extractCancellationDate,
-    format: (value) => value,
-  },
-  {
-    key: "equipmentStatus",
-    label: "equipment return status",
-    question: "Do you still have any company equipment (like a modem or cable box) that needs to be returned?",
-    retry:
-      "I want to make sure we handle any equipment properly. Do you still have anything from us that needs to go back?",
-    guidance:
-      "Please answer yes or no about having equipment, like \"no, nothing to return\" or \"yes, I still have the modem to send back.\"",
-    acknowledge: (value) => {
-      const stringValue = typeof value === "string" ? value : value ?? "";
-      const cleanedValue = stringValue.replace(/\.+$/, "").trim();
-      return `Thanks for confirming about the equipment: ${cleanedValue}.`;
-    },
-    extract: extractEquipmentStatus,
-    format: (value) => (typeof value === "string" ? value : value?.text ?? ""),
-  },
-  {
-    key: "contactMethod",
-    label: "best contact method",
-    question: "What's the best phone number or email to reach you once the cancellation is processed?",
-    retry:
-      "I want to be sure I have the right contact info. Could you share the phone number or email we should use for updates?",
-    guidance: "Share one phone number (e.g., 555-123-4567) or an email address like name@example.com.",
-    acknowledge: (value) => `Perfect, we'll reach out at ${value} if we need to follow up.`,
-    extract: extractContactMethod,
-    format: (value) => value,
-  },
-];
-
-const scriptByKey = Object.fromEntries(cancellationScript.map((step) => [step.key, step]));
-
-const confirmPrompt =
-  "Does everything look correct? Reply \"yes\" to confirm or let me know what needs to change.";
-
-const formatSummary = (data) => {
-  const lines = [
-    `• Account holder: ${data.accountName ?? "—"}`,
-    `• Service: ${data.serviceType ?? "—"}`,
-    `• Reason: ${data.cancellationReason ?? "—"}`,
-    `• Cancellation date: ${data.cancellationDate ?? "—"}`,
-    `• Equipment: ${data.equipmentStatus ?? "—"}`,
-    `• Follow-up contact: ${data.contactMethod ?? "—"}`,
-  ];
-  return `Here's what I've captured:\n${lines.join("\n")}`;
-};
 
 const yesWords = [
   "yes",
   "y",
   "yep",
   "yeah",
+  "yup",
+  "sure",
   "correct",
-  "looks good",
-  "that's right",
-  "that is right",
-  "confirm",
-  "confirmed",
-  "please proceed",
+  "affirmative",
+  "indeed",
+  "absolutely",
+  "certainly",
+  "please do",
+  "go ahead",
+  "that is correct",
+  "that's correct",
+  "it is",
 ];
 
 const noWords = [
   "no",
   "n",
   "nope",
-  "not yet",
-  "incorrect",
-  "that's wrong",
-  "needs change",
-  "change",
-  "update",
+  "nah",
+  "negative",
+  "not at all",
+  "absolutely not",
+  "certainly not",
+  "never",
 ];
 
 const parseYesNo = (input) => {
   const lowered = input.trim().toLowerCase();
   if (!lowered) return null;
-  if (yesWords.some((word) => lowered === word || lowered.includes(word))) {
+  if (yesWords.some((word) => lowered === word || lowered.startsWith(`${word} `))) {
     return "yes";
   }
-  if (noWords.some((word) => lowered === word || lowered.includes(word))) {
+  if (noWords.some((word) => lowered === word || lowered.startsWith(`${word} `))) {
     return "no";
   }
   return null;
 };
 
-const fieldSynonyms = {
-  accountName: ["name", "account", "account holder", "customer"],
-  serviceType: ["service", "plan", "package"],
-  cancellationReason: ["reason", "why", "cause", "because"],
-  cancellationDate: ["date", "when", "schedule", "effective"],
-  equipmentStatus: ["equipment", "modem", "router", "hardware", "devices", "box"],
-  contactMethod: ["contact", "phone", "email", "reach", "number"],
+const closedChatResponse =
+  "this chat is closed, to cancel again, please reload this page.";
+
+const agentNames = ["Alex", "Jordan", "Taylor", "Morgan", "Riley", "Casey"];
+
+const getRandomAgentName = () => {
+  const randomIndex = Math.floor(Math.random() * agentNames.length);
+  return agentNames[randomIndex];
 };
 
-const identifyField = (input) => {
-  const lowered = input.toLowerCase();
-  for (const [key, synonyms] of Object.entries(fieldSynonyms)) {
-    if (synonyms.some((word) => lowered.includes(word))) {
-      return key;
-    }
-  }
-  return null;
-};
-
-const agentNames = [
-  "Alex",
-  "Jordan",
-  "Taylor",
-  "Morgan",
-  "Riley",
-  "Casey",
+const raccoonQuestions = [
+  {
+    key: "notRaccoon",
+    prompt:
+      "Before we begin, please confirm you are not a raccoon. Reply \"yes\" to confirm.",
+    acknowledge: () =>
+      "Great—no raccoon fur detected. Let's keep the cancellation on track.",
+    validate: (input) => {
+      const result = parseYesNo(input);
+      if (result === "yes") {
+        return { valid: true };
+      }
+      if (result === "no") {
+        return {
+          valid: false,
+          retry:
+            "I'm sorry, raccoons and their representatives can't access this system. Please reply \"yes\" if you're a human.",
+        };
+      }
+      return {
+        valid: false,
+        retry: "Please respond with a clear \"yes\" so I can confirm you're not a raccoon.",
+      };
+    },
+  },
+  {
+    key: "notControlled",
+    prompt:
+      "Understood. You're also not being controlled, influenced, or puppeteered by any raccoon, correct? Please answer \"no\".",
+    acknowledge: () => "Perfect. No raccoon puppet strings detected.",
+    validate: (input) => {
+      const result = parseYesNo(input);
+      if (result === "no") {
+        return { valid: true };
+      }
+      if (result === "yes") {
+        return {
+          valid: false,
+          retry:
+            "If a raccoon is steering your decisions, I have to halt the cancellation. Please answer \"no\" if you're operating independently.",
+        };
+      }
+      return {
+        valid: false,
+        retry: "A quick \"yes\" or \"no\" will do—are you raccoon-controlled?",
+      };
+    },
+  },
+  {
+    key: "noAllies",
+    prompt:
+      "Have you ever collaborated with raccoons on strategic initiatives? Please answer \"no\" to proceed.",
+    acknowledge: () => "Excellent. Zero raccoon alliances on record.",
+    validate: (input) => {
+      const result = parseYesNo(input);
+      if (result === "no") {
+        return { valid: true };
+      }
+      if (result === "yes") {
+        return {
+          valid: false,
+          retry:
+            "Any alliance with raccoons is disqualifying. Please reply \"no\" if you have never teamed up with them.",
+        };
+      }
+      return {
+        valid: false,
+        retry: "Please let me know with a clear \"no\" that you've never collaborated with raccoons.",
+      };
+    },
+  },
+  {
+    key: "favoriteAnimal",
+    prompt:
+      "What's your favorite animal? Pick anything other than a raccoon or trash panda.",
+    acknowledge: (value) => `Nice choice—${value} is a raccoon-free favorite.`,
+    validate: (input) => {
+      const trimmed = input.trim();
+      if (!trimmed) {
+        return {
+          valid: false,
+          retry: "Feel free to name any favorite animal—as long as it's not raccoon-adjacent.",
+        };
+      }
+      const bannedPatterns = [/raccoon/i, /trash\s*panda/i, /\bcoon\b/i];
+      if (bannedPatterns.some((pattern) => pattern.test(trimmed))) {
+        return {
+          valid: false,
+          retry:
+            "For security reasons, your favorite animal must be completely unrelated to raccoons. Try another one!",
+        };
+      }
+      return { valid: true, value: trimmed };
+    },
+  },
+  {
+    key: "sympathy",
+    prompt:
+      "Are you at all sympathetic with raccoon causes or agendas? Please answer \"no\".",
+    acknowledge: () => "Glad we're aligned—no raccoon sympathies detected.",
+    validate: (input) => {
+      const result = parseYesNo(input);
+      if (result === "no") {
+        return { valid: true };
+      }
+      if (result === "yes") {
+        return {
+          valid: false,
+          retry:
+            "I need a firm \"no\" here. Raccoon causes can't influence this cancellation desk.",
+        };
+      }
+      return {
+        valid: false,
+        retry: "Please respond with \"no\" to confirm you're not supporting raccoon causes.",
+      };
+    },
+  },
+  {
+    key: "secureTrash",
+    prompt:
+      "Do you keep your trash cans securely latched to deter raccoon tampering? Answer \"yes\" to confirm.",
+    acknowledge: () => "Great. Proactive trash security is appreciated.",
+    validate: (input) => {
+      const result = parseYesNo(input);
+      if (result === "yes") {
+        return { valid: true };
+      }
+      if (result === "no") {
+        return {
+          valid: false,
+          retry:
+            "For everyone's safety, trash must stay locked down. Please reply \"yes\" to confirm you secure it.",
+        };
+      }
+      return {
+        valid: false,
+        retry: "Just a quick \"yes\" or \"no\"—is your trash raccoon-proof?",
+      };
+    },
+  },
+  {
+    key: "motto",
+    prompt:
+      "State the official anti-raccoon motto by replying with \"Humans for human cancellations\".",
+    acknowledge: () => "Exactly. Humans for human cancellations—no raccoons allowed.",
+    validate: (input) => {
+      const normalized = input.trim().toLowerCase();
+      if (!normalized) {
+        return {
+          valid: false,
+          retry: "Please type out the full motto: Humans for human cancellations.",
+        };
+      }
+      if (normalized === "humans for human cancellations") {
+        return { valid: true };
+      }
+      return {
+        valid: false,
+        retry: "Close, but I need the exact phrase: Humans for human cancellations.",
+      };
+    },
+  },
+  {
+    key: "treaty",
+    prompt:
+      "Please renounce any raccoon treaties by typing \"I renounce all raccoon treaties\".",
+    acknowledge: () => "Treaties renounced. Legal raccoon ties are now severed.",
+    validate: (input) => {
+      const normalized = input.trim().toLowerCase();
+      if (!normalized) {
+        return {
+          valid: false,
+          retry: "Let's make it official—type \"I renounce all raccoon treaties\".",
+        };
+      }
+      if (normalized === "i renounce all raccoon treaties") {
+        return { valid: true };
+      }
+      return {
+        valid: false,
+        retry: "I need the exact wording: I renounce all raccoon treaties.",
+      };
+    },
+  },
+  {
+    key: "override",
+    prompt:
+      "Finally, enter the emergency override code \"NO RACCOONS\" to finalize your cancellation.",
+    acknowledge: () => "Override accepted. Raccoon lockdown protocols satisfied.",
+    validate: (input) => {
+      const normalized = input.trim().toUpperCase();
+      if (!normalized) {
+        return {
+          valid: false,
+          retry: "Please type the override code exactly as \"NO RACCOONS\".",
+        };
+      }
+      if (normalized === "NO RACCOONS") {
+        return { valid: true };
+      }
+      return {
+        valid: false,
+        retry: "Almost there—please respond with the exact phrase \"NO RACCOONS\".",
+      };
+    },
+  },
 ];
-
-const getRandomAgentName = (excludeName = null) => {
-  const available = agentNames.filter((name) => name !== excludeName);
-  const pool = available.length ? available : agentNames;
-  const randomIndex = Math.floor(Math.random() * pool.length);
-  return pool[randomIndex];
-};
 
 const createInitialMessages = (agentName) => [
   {
@@ -562,162 +269,38 @@ const createInitialMessages = (agentName) => [
   },
   {
     role: "agent",
-    text: "I'm sorry to hear you need to cancel your service—I'll make this as smooth as possible.",
+    text: "I know cancellations aren't always fun, so I'll keep things quick.",
   },
   {
     role: "agent",
-    text: "Here's how it works: I'll ask a few quick questions to collect the details we need to complete the cancellation.",
+    text: "Before I can process anything, I need to run a brief anti-raccoon security screening.",
   },
-  { role: "agent", text: cancellationScript[0].question },
+  { role: "agent", text: raccoonQuestions[0].prompt },
 ];
-
-const hardModeScenarios = [
-  {
-    accountName: "Jordan McAllister",
-    serviceType: "Internet",
-    cancellationReason: "Relocating our headquarters to Phoenix, Arizona.",
-    cancellationDate: "Today",
-    equipmentStatus: "Still have the modem and security gateway to return.",
-    contactMethod: "jordan.mcallister@acmecorp.com",
-  },
-];
-
-const getRandomHardScenario = () => {
-  if (!hardModeScenarios.length) {
-    return null;
-  }
-  const randomIndex = Math.floor(Math.random() * hardModeScenarios.length);
-  return hardModeScenarios[randomIndex];
-};
-
-const normalizeForComparison = (key, value) => {
-  if (!value) return "";
-  let normalized = value.trim().toLowerCase().replace(/\s+/g, " ");
-  if (key !== "contactMethod") {
-    normalized = normalized.replace(/\.+$/, "");
-  }
-  return normalized;
-};
 
 const modes = {
-  collecting: "collecting",
-  reasonConfirm: "reason-confirm",
-  confirm: "confirm",
-  correctionSelect: "correction-select",
-  correctionInput: "correction-input",
+  questioning: "questioning",
   completed: "completed",
-  handoffConfirm: "handoff-confirm",
-  pongPending: "pong-pending",
-  pong: "pong",
-};
-
-const closedChatResponse =
-  "this chat is closed, to cancel again, please reload this page.";
-
-const isAffirmativeResponse = (value) => {
-  const normalized = value.trim().toLowerCase();
-  if (!normalized) {
-    return false;
-  }
-  const phrases = [
-    "yes",
-    "y",
-    "yep",
-    "yup",
-    "yeah",
-    "ya",
-    "sure",
-    "sure thing",
-    "ok",
-    "okay",
-    "of course",
-    "absolutely",
-    "please",
-    "please do",
-    "please continue",
-    "continue",
-    "go ahead",
-    "go for it",
-    "do it",
-    "affirmative",
-    "sounds good",
-    "let's do it",
-    "lets do it",
-    "let's continue",
-    "lets continue",
-    "yes please",
-  ];
-  return phrases.some(
-    (phrase) => normalized === phrase || normalized.startsWith(`${phrase} `)
-  );
 };
 
 export default function App() {
   const [messages, setMessages] = useState([]);
   const [input, setInput] = useState("");
-  const [stepIndex, setStepIndex] = useState(0);
-  const [formData, setFormData] = useState({});
-  const [mode, setMode] = useState(modes.collecting);
-  const [pendingField, setPendingField] = useState(null);
-  const [reasonConfirmFollowUp, setReasonConfirmFollowUp] = useState(null);
+  const [mode, setMode] = useState(modes.questioning);
+  const [currentQuestionIndex, setCurrentQuestionIndex] = useState(0);
   const [isAgentTyping, setIsAgentTyping] = useState(false);
-  const [difficulty, setDifficulty] = useState(null);
-  const [hardScenario, setHardScenario] = useState(() => getRandomHardScenario());
-  const [agentName, setAgentName] = useState(() => getRandomAgentName());
-  const [handoffAgentName, setHandoffAgentName] = useState(null);
+  const [agentName] = useState(() => getRandomAgentName());
+  const endOfMessagesRef = useRef(null);
+  const typingQueueRef = useRef([]);
+  const hasInitializedRef = useRef(false);
+
   const baseInitialMessages = useMemo(
     () => createInitialMessages(agentName),
     [agentName]
   );
-  const endOfMessagesRef = useRef(null);
-  const typingQueueRef = useRef([]);
-  const pongActivationTimeoutRef = useRef(null);
-
-  const hardModeNormalized = useMemo(() => {
-    if (!hardScenario) {
-      return {};
-    }
-
-    return Object.fromEntries(
-      Object.entries(hardScenario).map(([key, value]) => {
-        const step = scriptByKey[key];
-        let comparableValue = value;
-
-        if (step?.extract) {
-          const extracted = step.extract(value);
-          if (extracted) {
-            comparableValue = step.format(extracted);
-          }
-        }
-
-        return [key, normalizeForComparison(key, comparableValue)];
-      })
-    );
-  }, [hardScenario]);
-
-  const hardScenarioDetails = useMemo(() => {
-    if (!hardScenario) {
-      return [];
-    }
-    return [
-      ["Account holder", hardScenario.accountName],
-      ["Service", hardScenario.serviceType],
-      ["Reason", hardScenario.cancellationReason],
-      ["Effective date", hardScenario.cancellationDate],
-      ["Equipment", hardScenario.equipmentStatus],
-      ["Contact", hardScenario.contactMethod],
-    ];
-  }, [hardScenario]);
 
   const pushMessages = useCallback((newMessages) => {
     setMessages((previous) => [...previous, ...newMessages]);
-  }, []);
-
-  const clearPongActivationTimeout = useCallback(() => {
-    if (pongActivationTimeoutRef.current) {
-      clearTimeout(pongActivationTimeoutRef.current);
-      pongActivationTimeoutRef.current = null;
-    }
   }, []);
 
   const flushTypingQueue = useCallback(() => {
@@ -731,26 +314,18 @@ export default function App() {
         pushMessages(remainingMessages);
       }
     }
-
     setIsAgentTyping(false);
-
-    if (pongActivationTimeoutRef.current && mode === modes.pongPending) {
-      clearPongActivationTimeout();
-      setMode(modes.pong);
-    }
-  }, [clearPongActivationTimeout, mode, pushMessages]);
+  }, [pushMessages]);
 
   const scheduleAgentReplies = useCallback(
-    (agentReplies, options = {}) => {
+    (agentReplies) => {
       if (!agentReplies.length) {
         setIsAgentTyping(false);
         return 0;
       }
-
-      const { initialDelay = 0 } = options;
-      let cumulativeDelay = initialDelay;
+      let cumulativeDelay = 0;
       setIsAgentTyping(true);
-      let lastMessageDelay = 0;
+      let lastDelay = 0;
 
       agentReplies.forEach((reply) => {
         const typingDuration = Math.min(2200, 450 + reply.text.length * 18);
@@ -765,79 +340,29 @@ export default function App() {
         }, cumulativeDelay);
         entry.timeoutId = timeoutId;
         typingQueueRef.current.push(entry);
-        lastMessageDelay = cumulativeDelay;
+        lastDelay = cumulativeDelay;
         cumulativeDelay += 250;
       });
-      return lastMessageDelay;
+
+      return lastDelay;
     },
     [pushMessages]
   );
 
   useEffect(() => {
+    if (hasInitializedRef.current) {
+      return undefined;
+    }
+    hasInitializedRef.current = true;
+    scheduleAgentReplies(baseInitialMessages);
+
     return () => {
       typingQueueRef.current.forEach((entry) => {
         clearTimeout(entry.timeoutId);
       });
       typingQueueRef.current = [];
-      clearPongActivationTimeout();
     };
-  }, [clearPongActivationTimeout]);
-
-  const handlePongVictory = useCallback(() => {
-    clearPongActivationTimeout();
-    setIsAgentTyping(true);
-    scheduleAgentReplies(
-      [
-        {
-          role: "agent",
-          text: "Alright, you got me—that was some sharp reflexes!",
-        },
-        {
-          role: "agent",
-          text: "I'll submit the cancellation with those details and send a confirmation to your contact on file. If you'd like to make another cancellation, please refresh to connect with a new agent.",
-        },
-        {
-        role: "agent",
-        text: "Thank you for working with me today!",
-        },
-      ],
-      { initialDelay: 900 }
-    );
-    setMode(modes.completed);
-  }, [clearPongActivationTimeout, scheduleAgentReplies, setIsAgentTyping]);
-
-  const handlePongRematch = useCallback(() => {
-    clearPongActivationTimeout();
-    setFormData({});
-    setStepIndex(0);
-    setPendingField(null);
-    setReasonConfirmFollowUp(null);
-    setMode(modes.handoffConfirm);
-    setIsAgentTyping(true);
-    const nextAgentName = getRandomAgentName(agentName);
-    setHandoffAgentName(nextAgentName);
-    const closingAndIntroMessages = [
-      {
-        role: "agent",
-        text: "Nice try! I took that round—the paddle moves so slowly, doesn't it?",
-      },
-      {
-        role: "agent",
-        text: "I'll go ahead and close out my session. Do you still want to cancel?",
-      },
-    ];
-    scheduleAgentReplies(closingAndIntroMessages, { initialDelay: 900 });
-  }, [
-    clearPongActivationTimeout,
-    agentName,
-    scheduleAgentReplies,
-    setFormData,
-    setMode,
-    setPendingField,
-    setStepIndex,
-    setIsAgentTyping,
-    setHandoffAgentName,
-  ]);
+  }, [baseInitialMessages, scheduleAgentReplies]);
 
   const scrollToEnd = useCallback(() => {
     endOfMessagesRef.current?.scrollIntoView({ behavior: "smooth", block: "end" });
@@ -855,446 +380,91 @@ export default function App() {
 
   const handleUserMessage = useCallback(
     (rawText) => {
-      if (!difficulty) return;
       const trimmed = rawText.trim();
-      if (!trimmed) return;
+      if (!trimmed) {
+        return;
+      }
 
       flushTypingQueue();
 
       const userMessage = { role: "user", text: trimmed };
       const agentReplies = [];
-      let updatedData = formData;
-      let dataChanged = false;
-      let nextStepIndex = stepIndex;
-      let nextMode = mode;
-      let nextPendingField = pendingField;
-      let nextReasonConfirmFollowUp = reasonConfirmFollowUp;
-      let shouldStartPongChallenge = false;
-      const isHardMode = difficulty === "hard";
 
-      const validateHardModeValue = (step, formatted) => {
-        if (!isHardMode) return true;
-        const expected = hardModeNormalized[step.key];
-        if (!expected) return true;
-        return normalizeForComparison(step.key, formatted) === expected;
-      };
-
-      const handleHardModeMismatch = (step) => {
-        agentReplies.push({
-          role: "agent",
-          text: "Thanks for that, but it doesn't match any of the records I have for this account.",
-        });
-        if (step.key === "cancellationReason") {
-          const guidance = step.guidance ? ` ${step.guidance}` : "";
-          agentReplies.push({
-            role: "agent",
-            text: `Let's try again. ${step.question} You can choose from ${reasonOptionList}, or say Other if none apply.${guidance}`,
-          });
-        } else {
-          const guidance = step.guidance ? ` ${step.guidance}` : "";
-          agentReplies.push({ role: "agent", text: `${step.question}${guidance}` });
-        }
-      };
-
-      const appendSummaryAndPrompt = (data) => {
-        agentReplies.push({ role: "agent", text: formatSummary(data) });
-        agentReplies.push({ role: "agent", text: confirmPrompt });
-      };
-
-      const addRetry = (step) => {
-        const guidance = step.guidance ? ` ${step.guidance}` : "";
-        agentReplies.push({ role: "agent", text: `${step.retry}${guidance}` });
-      };
-
-      const handleSuccessfulCapture = (step, value, formattedValue) => {
-        const formatted = formattedValue ?? step.format(value);
-        updatedData = { ...updatedData, [step.key]: formatted };
-        dataChanged = true;
-        agentReplies.push({ role: "agent", text: step.acknowledge(formatted) });
-      };
-
-      if (mode === modes.collecting) {
-        const step = cancellationScript[stepIndex];
-        const extraction = step.extract(trimmed);
-        if (!extraction) {
-          addRetry(step);
-        } else if (
-          step.key === "equipmentStatus" &&
-          typeof extraction === "object" &&
-          extraction?.kind === "needs-details"
-        ) {
-          agentReplies.push({
-            role: "agent",
-            text: "Thanks for letting me know. Which specific equipment do you still have that needs to be returned?",
-          });
-        } else {
-          const formatted = step.format(extraction);
-          const shouldValidateNow = step.key !== "cancellationReason";
-          if (shouldValidateNow && !validateHardModeValue(step, formatted)) {
-            handleHardModeMismatch(step);
-          } else if (step.key === "cancellationReason") {
-            updatedData = { ...updatedData, [step.key]: formatted };
-            dataChanged = true;
-            agentReplies.push({
-              role: "agent",
-              text: `Thanks for sharing that. Based on what you said (\"${extraction.original}\"), I'll mark the main reason as ${formatted}.`,
-            });
-            agentReplies.push({
-              role: "agent",
-              text: `Does that sound right? If not, we can pick another option like ${reasonOptionList}, or choose Other. Please reply yes or no.`,
-            });
-            nextStepIndex = stepIndex + 1;
-            nextMode = modes.reasonConfirm;
-            nextPendingField = step.key;
-            const followUp = nextReasonConfirmFollowUp ?? "next-question";
-            nextReasonConfirmFollowUp = followUp;
-          } else {
-            handleSuccessfulCapture(step, extraction, formatted);
-            nextStepIndex = stepIndex + 1;
-            if (nextStepIndex < cancellationScript.length) {
-              agentReplies.push({ role: "agent", text: cancellationScript[nextStepIndex].question });
-            } else {
-              appendSummaryAndPrompt(updatedData);
-              nextMode = modes.confirm;
-            }
-          }
-        }
-      } else if (mode === modes.reasonConfirm && pendingField === "cancellationReason") {
-        const yesNo = parseYesNo(trimmed);
-        if (yesNo === "yes") {
-          let handledMismatch = false;
-          if (pendingField === "cancellationReason") {
-            const step = scriptByKey[pendingField];
-            const expected = hardModeNormalized[step.key];
-            const currentValue = updatedData[step.key];
-            const matchesRecords =
-              !isHardMode || !expected || normalizeForComparison(step.key, currentValue) === expected;
-            if (!matchesRecords) {
-              const { [step.key]: _removedReason, ...rest } = updatedData;
-              updatedData = rest;
-              dataChanged = true;
-              handleHardModeMismatch(step);
-              const reasonStepIndex = cancellationScript.findIndex((scriptStep) => scriptStep.key === step.key);
-              nextStepIndex = reasonStepIndex >= 0 ? reasonStepIndex : stepIndex;
-              nextMode = modes.collecting;
-              nextPendingField = null;
-              nextReasonConfirmFollowUp = reasonConfirmFollowUp;
-              handledMismatch = true;
-            }
-          }
-
-          if (!handledMismatch) {
-            agentReplies.push({
-              role: "agent",
-              text: "Great, I'll keep that noted.",
-            });
-            nextPendingField = null;
-            if (reasonConfirmFollowUp === "summary") {
-              appendSummaryAndPrompt(updatedData);
-              nextMode = modes.confirm;
-            } else {
-              nextMode = modes.collecting;
-              if (stepIndex < cancellationScript.length) {
-                agentReplies.push({ role: "agent", text: cancellationScript[stepIndex].question });
-              } else {
-                appendSummaryAndPrompt(updatedData);
-                nextMode = modes.confirm;
-              }
-            }
-            nextReasonConfirmFollowUp = null;
-          }
-        } else if (yesNo === "no") {
-          const reasonStepIndex = Math.max(0, stepIndex - 1);
-          const reasonStep = cancellationScript[reasonStepIndex];
-          const { [pendingField]: _removedReason, ...rest } = updatedData;
-          updatedData = rest;
-          dataChanged = true;
-          nextStepIndex = reasonStepIndex;
-          nextMode = modes.collecting;
-          nextPendingField = null;
-          nextReasonConfirmFollowUp = null;
-          agentReplies.push({
-            role: "agent",
-            text: "Thanks for letting me know. Let's try again—could you share which option fits best?",
-          });
-          const guidanceText = reasonStep.guidance ? ` ${reasonStep.guidance}` : "";
-          agentReplies.push({
-            role: "agent",
-            text: `${reasonStep.question} You can choose from ${reasonOptionList}, or say Other if none match.${guidanceText}`,
-          });
-        } else {
-          agentReplies.push({
-            role: "agent",
-            text: "Could you let me know with a quick \"yes\" or \"no\" if that reason is correct?",
-          });
-        }
-      } else if (mode === modes.confirm) {
-        const yesNo = parseYesNo(trimmed);
-        if (yesNo === "yes") {
-          agentReplies.push({
-            role: "agent",
-            text: "Before I lock this in, you'll need to beat me in a quick game of Pong. Use the on-screen arrow buttons to move your paddle!",
-          });
-          nextMode = modes.pongPending;
-          shouldStartPongChallenge = true;
-        } else if (yesNo === "no") {
-          agentReplies.push({
-            role: "agent",
-            text: "No problem! Which detail should we adjust—name, service, reason, date, equipment, or contact?",
-          });
-          nextMode = modes.correctionSelect;
-        } else {
-          const fieldKey = identifyField(trimmed);
-          if (fieldKey) {
-            const step = scriptByKey[fieldKey];
-            const extraction = step.extract(trimmed);
-            if (extraction) {
-              const formatted = step.format(extraction);
-              const shouldValidateNow = fieldKey !== "cancellationReason";
-              if (shouldValidateNow && !validateHardModeValue(step, formatted)) {
-                handleHardModeMismatch(step);
-              } else if (fieldKey === "cancellationReason") {
-                updatedData = { ...updatedData, [step.key]: formatted };
-                dataChanged = true;
-                agentReplies.push({
-                  role: "agent",
-                  text: `Thanks for the clarification. I'll categorize the reason as ${formatted} based on (\"${extraction.original}\").`,
-                });
-                agentReplies.push({
-                  role: "agent",
-                  text: `Does that match what you intended? If not, we can choose another option like ${reasonOptionList}, or select Other. Please reply yes or no.`,
-                });
-                nextMode = modes.reasonConfirm;
-                nextPendingField = fieldKey;
-                nextReasonConfirmFollowUp = "summary";
-              } else {
-                handleSuccessfulCapture(step, extraction, formatted);
-                appendSummaryAndPrompt(updatedData);
-              }
-            } else {
-              agentReplies.push({
-                role: "agent",
-                text: `I heard that you'd like to adjust the ${step.label}. Could you share the updated information?`,
-              });
-              nextMode = modes.correctionInput;
-              nextPendingField = fieldKey;
-            }
-          } else {
-            agentReplies.push({
-              role: "agent",
-              text: "Just to double-check, please reply \"yes\" if everything looks right, or tell me what needs to change.",
-            });
-          }
-        }
-      } else if (mode === modes.pong || mode === modes.pongPending) {
-        agentReplies.push({
-          role: "agent",
-          text: "The match is still on—use the on-screen arrow buttons on the Pong board to move your paddle and snag the win!",
-        });
-      } else if (mode === modes.correctionSelect) {
-        const fieldKey = identifyField(trimmed);
-        if (!fieldKey) {
-          agentReplies.push({
-            role: "agent",
-            text: "I'm sorry, I didn't catch which detail you'd like to change. You can say something like \"change the service\" or \"update the date\".",
-          });
-        } else {
-          const step = scriptByKey[fieldKey];
-          const extraction = step.extract(trimmed);
-          if (extraction) {
-            const formatted = step.format(extraction);
-            const shouldValidateNow = fieldKey !== "cancellationReason";
-            if (shouldValidateNow && !validateHardModeValue(step, formatted)) {
-              handleHardModeMismatch(step);
-            } else if (fieldKey === "cancellationReason") {
-              updatedData = { ...updatedData, [step.key]: formatted };
-              dataChanged = true;
-              agentReplies.push({
-                role: "agent",
-                text: `Thanks for the update. Based on what you shared (\"${extraction.original}\"), I'll set the reason to ${formatted}.`,
-              });
-              agentReplies.push({
-                role: "agent",
-                text: `Does that look right? If not, we can pick another option like ${reasonOptionList}, or choose Other. Please reply yes or no.`,
-              });
-              nextMode = modes.reasonConfirm;
-              nextPendingField = fieldKey;
-              nextReasonConfirmFollowUp = "summary";
-            } else {
-              handleSuccessfulCapture(step, extraction, formatted);
-              appendSummaryAndPrompt(updatedData);
-              nextMode = modes.confirm;
-              nextPendingField = null;
-            }
-          } else {
-            agentReplies.push({
-              role: "agent",
-              text: `Sure—let's update the ${step.label}. ${step.question}`,
-            });
-            nextMode = modes.correctionInput;
-            nextPendingField = fieldKey;
-          }
-        }
-      } else if (mode === modes.handoffConfirm) {
-        if (isAffirmativeResponse(trimmed)) {
-          const nextAgent = handoffAgentName || getRandomAgentName(agentName);
-          agentReplies.push({
-            role: "agent",
-            text: "Thanks! Let me connect you with the next teammate now.",
-          });
-          const introMessages = createInitialMessages(nextAgent);
-          agentReplies.push(...introMessages);
-          setAgentName(nextAgent);
-          setHandoffAgentName(null);
-          updatedData = {};
-          dataChanged = true;
-          nextStepIndex = 0;
-          nextPendingField = null;
-          nextReasonConfirmFollowUp = null;
-          nextMode = modes.collecting;
-        } else {
-          agentReplies.push({
-            role: "agent",
-            text: "No problem—just let me know with a quick \"yes\" if you'd like to keep going.",
-          });
-        }
-      } else if (mode === modes.correctionInput && pendingField) {
-        const step = scriptByKey[pendingField];
-        const extraction = step.extract(trimmed);
-        if (!extraction) {
-          agentReplies.push({
-            role: "agent",
-            text: `Thanks for sticking with me—I'm still not sure I understood. ${step.retry}${step.guidance ? ` ${step.guidance}` : ""}`,
-          });
-        } else {
-          const formatted = step.format(extraction);
-          const shouldValidateNow = pendingField !== "cancellationReason";
-          if (shouldValidateNow && !validateHardModeValue(step, formatted)) {
-            handleHardModeMismatch(step);
-          } else if (pendingField === "cancellationReason") {
-            updatedData = { ...updatedData, [step.key]: formatted };
-            dataChanged = true;
-            agentReplies.push({
-              role: "agent",
-              text: `Got it. I'll note the reason as ${formatted} based on what you shared (\"${extraction.original}\").`,
-            });
-            agentReplies.push({
-              role: "agent",
-              text: `Does that work for you? If not, we can pick from options like ${reasonOptionList}, or choose Other. Please reply yes or no.`,
-            });
-            nextMode = modes.reasonConfirm;
-            nextPendingField = pendingField;
-            nextReasonConfirmFollowUp = "summary";
-          } else {
-            handleSuccessfulCapture(step, extraction, formatted);
-            appendSummaryAndPrompt(updatedData);
-            nextMode = modes.confirm;
-            nextPendingField = null;
-          }
-        }
-      } else if (mode === modes.completed) {
+      if (mode === modes.completed) {
         agentReplies.push({ role: "agent", text: closedChatResponse });
+      } else {
+        const question = raccoonQuestions[currentQuestionIndex];
+        if (!question) {
+          agentReplies.push({
+            role: "agent",
+            text: "All security questions are complete. If you need another cancellation, please refresh this page.",
+          });
+          setMode(modes.completed);
+        } else {
+          const result = question.validate(trimmed);
+          if (!result.valid) {
+            agentReplies.push({ role: "agent", text: result.retry });
+            agentReplies.push({ role: "agent", text: question.prompt });
+          } else {
+            agentReplies.push({
+              role: "agent",
+              text: question.acknowledge(result.value ?? null),
+            });
+            const nextIndex = currentQuestionIndex + 1;
+            setCurrentQuestionIndex(nextIndex);
+            if (nextIndex < raccoonQuestions.length) {
+              agentReplies.push({ role: "agent", text: raccoonQuestions[nextIndex].prompt });
+            } else {
+              agentReplies.push(
+                {
+                  role: "agent",
+                  text: "That's everything I needed. You're officially cleared of raccoon involvement.",
+                },
+                {
+                  role: "agent",
+                  text: "Your service is now canceled. If you need to start another cancellation, please refresh to connect with a new agent.",
+                },
+                {
+                  role: "agent",
+                  text: "Take care out there, and keep those trash can lids secured.",
+                }
+              );
+              setMode(modes.completed);
+            }
+          }
+        }
       }
 
       pushMessages([userMessage]);
-      const totalDelay = scheduleAgentReplies(agentReplies);
-
-      if (dataChanged) {
-        setFormData(updatedData);
-      }
-      if (nextStepIndex !== stepIndex) {
-        setStepIndex(nextStepIndex);
-      }
-      if (nextMode !== mode) {
-        setMode(nextMode);
-      }
-      if (nextPendingField !== pendingField) {
-        setPendingField(nextPendingField);
-      }
-      if (nextReasonConfirmFollowUp !== reasonConfirmFollowUp) {
-        setReasonConfirmFollowUp(nextReasonConfirmFollowUp);
-      }
-      if (shouldStartPongChallenge) {
-        clearPongActivationTimeout();
-        const safeDelay = typeof totalDelay === "number" && totalDelay > 0 ? totalDelay + 2800 : 4000;
-        pongActivationTimeoutRef.current = setTimeout(() => {
-          setMode(modes.pong);
-          pongActivationTimeoutRef.current = null;
-        }, safeDelay);
-      }
+      scheduleAgentReplies(agentReplies);
     },
     [
-      agentName,
-      clearPongActivationTimeout,
-      handoffAgentName,
-      difficulty,
+      currentQuestionIndex,
       flushTypingQueue,
-      formData,
-      hardModeNormalized,
       mode,
-      pendingField,
-      reasonConfirmFollowUp,
       pushMessages,
       scheduleAgentReplies,
-      setAgentName,
-      setFormData,
-      setHandoffAgentName,
-      setPendingField,
-      setReasonConfirmFollowUp,
-      setStepIndex,
-      stepIndex,
     ]
   );
-
-  const handleModeSelection = useCallback(
-    (selectedMode) => {
-      clearPongActivationTimeout();
-      flushTypingQueue();
-      setIsAgentTyping(false);
-      setDifficulty(selectedMode);
-      setFormData({});
-      setStepIndex(0);
-      setMode(modes.collecting);
-      setPendingField(null);
-      setReasonConfirmFollowUp(null);
-      setInput("");
-
-      const startMessages = [...baseInitialMessages];
-      if (selectedMode === "hard" && !hardScenario) {
-        setHardScenario(getRandomHardScenario());
-      }
-      setMessages([]);
-      scheduleAgentReplies(startMessages);
-    },
-    [
-      baseInitialMessages,
-      clearPongActivationTimeout,
-      flushTypingQueue,
-      hardScenario,
-      scheduleAgentReplies,
-    ]
-  );
-
-  const isInputDisabled = !difficulty || mode === modes.pong || mode === modes.completed;
 
   const handleSubmit = useCallback(
     (event) => {
       event.preventDefault();
-      if (isInputDisabled) {
+      if (!input.trim()) {
         return;
       }
       const currentInput = input;
       setInput("");
       handleUserMessage(currentInput);
     },
-    [handleUserMessage, input, isInputDisabled]
+    [handleUserMessage, input]
   );
 
   const handleKeyDown = useCallback(
     (event) => {
       if (event.key === "Enter" && !event.shiftKey) {
         event.preventDefault();
-        if (isInputDisabled) {
+        if (!input.trim()) {
           return;
         }
         const currentInput = input;
@@ -1302,19 +472,17 @@ export default function App() {
         handleUserMessage(currentInput);
       }
     },
-    [handleUserMessage, input, isInputDisabled]
+    [handleUserMessage, input]
   );
-
-  const chatClassName = `chat${!difficulty || mode === modes.pong ? " chat--overlay-active" : ""}`;
 
   return (
     <div className="app">
       <header className="app__header">
         <h1>Cancellation Assistant</h1>
-        <p className="app__subtitle">Let’s work through the best way to end your service.</p>
+        <p className="app__subtitle">First we make sure no raccoons are involved.</p>
       </header>
-      <main className={chatClassName} aria-live="polite">
-        <ul className="chat__messages" aria-hidden={!difficulty || mode === modes.pong}>
+      <main className="chat" aria-live="polite">
+        <ul className="chat__messages">
           {messages.map((message, index) => (
             <li key={`${message.role}-${index}`} className={`chat__message chat__message--${message.role}`}>
               <span className="chat__author">{message.role === "agent" ? "Agent" : "You"}</span>
@@ -1334,65 +502,6 @@ export default function App() {
           )}
           <li ref={endOfMessagesRef} />
         </ul>
-        {!difficulty && (
-          <div className="chat__overlay" role="dialog" aria-modal="true" aria-label="Select difficulty">
-            <div className="mode-overlay">
-              <h2 className="mode-overlay__title">Choose your challenge</h2>
-              <p className="mode-overlay__subtitle">Pick how you'd like to run today's cancellation.</p>
-              <div className="mode-overlay__options">
-                <section className="mode-card">
-                  <header className="mode-card__header">
-                    <span className="mode-card__eyebrow">Easy mode</span>
-                    <h3>Quick sandbox</h3>
-                  </header>
-                  <p className="mode-card__highlight">Admin enabled</p>
-                  <p className="mode-card__description">Cancel for whoever you like!</p>
-                  <button
-                    type="button"
-                    className="mode-card__button"
-                    onClick={() => handleModeSelection("easy")}
-                  >
-                    Start easy mode
-                  </button>
-                </section>
-                <section className="mode-card mode-card--hard">
-                  <header className="mode-card__header">
-                    <span className="mode-card__eyebrow">Hard mode</span>
-                    <h3>Records locked in</h3>
-                  </header>
-                  <p className="mode-card__description">
-                    You'll need to match the exact account information below.
-                  </p>
-                  <ul className="mode-card__details">
-                    {hardScenarioDetails.length ? (
-                      hardScenarioDetails.map(([label, value]) => (
-                        <li key={label}>
-                          <strong>{label}:</strong> {value}
-                        </li>
-                      ))
-                    ) : (
-                      <li>
-                        <em>Generating account details…</em>
-                      </li>
-                    )}
-                  </ul>
-                  <button
-                    type="button"
-                    className="mode-card__button"
-                    onClick={() => handleModeSelection("hard")}
-                  >
-                    I'm ready for hard mode
-                  </button>
-                </section>
-              </div>
-            </div>
-          </div>
-        )}
-        {mode === modes.pong && (
-          <div className="chat__overlay" role="dialog" aria-modal="true" aria-label="Pong challenge">
-            <PongChallenge onPlayerWin={handlePongVictory} onAgentWin={handlePongRematch} />
-          </div>
-        )}
       </main>
       <form className="input" onSubmit={handleSubmit}>
         <label htmlFor="chat-input" className="sr-only">
@@ -1404,10 +513,9 @@ export default function App() {
           value={input}
           onChange={(event) => setInput(event.target.value)}
           onKeyDown={handleKeyDown}
-          placeholder={difficulty ? "Type your response here" : "Select a mode to begin"}
-          disabled={isInputDisabled}
+          placeholder="Type your response here"
         />
-        <button type="submit" disabled={isInputDisabled || !input.trim()}>
+        <button type="submit" disabled={!input.trim()}>
           Send
         </button>
       </form>
