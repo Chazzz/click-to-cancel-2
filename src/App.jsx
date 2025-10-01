@@ -272,7 +272,7 @@ const createInitialMessages = (agentName) => [
   },
   {
     role: "agent",
-    text: "Before I can process anything, I need to run a brief anti-raccoon security screening.",
+    text: "Before I can process anything, I need to run a brief security screening.",
   },
   { role: "agent", text: raccoonQuestions[0].prompt },
 ];
@@ -478,7 +478,7 @@ export default function App() {
     <div className="app">
       <header className="app__header">
         <h1>Cancellation Assistant</h1>
-        <p className="app__subtitle">the most efficient way to cancel, guaranteed</p>
+        <p className="app__subtitle">The most efficient way to cancel, guaranteed.</p>
       </header>
       <main className="chat" aria-live="polite">
         <ul className="chat__messages">
