@@ -57,24 +57,23 @@ const raccoonQuestions = [
   {
     key: "notRaccoon",
     prompt:
-      "Before we begin, confirm in your own words that you are not a raccoon impersonator.",
-    acknowledge: () => "Great—thanks for confirming. Let's keep the cancellation on track.",
+      "Are you a raccoon impersonator? Please answer yes or no.",
+    acknowledge: () => "Great—thanks for the clear no. Let's keep the cancellation on track.",
     validate: (input) => {
       const result = parseYesNo(input);
-      const lowered = input.trim().toLowerCase();
-      if (result === "yes" || lowered.includes("human")) {
+      if (result === "no") {
         return { valid: true };
       }
-      if (result === "no") {
+      if (result === "yes") {
         return {
           valid: false,
           retry:
-            "I'm sorry, raccoons and their representatives can't access this system. If you're human, let me know unmistakably.",
+            "I'm sorry, raccoons and their representatives can't access this system. If you're human, answer with a definite no.",
         };
       }
       return {
         valid: false,
-        retry: "Give me a clear human-style confirmation so I can proceed.",
+        retry: "Please respond with a clear yes or no.",
       };
     },
   },
