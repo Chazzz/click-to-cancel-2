@@ -57,30 +57,31 @@ const raccoonQuestions = [
   {
     key: "notRaccoon",
     prompt:
-      "Before we begin, please confirm you are not a raccoon. Reply \"yes\" to confirm.",
+      "Before we begin, confirm in your own words that you are not a raccoon impersonator.",
     acknowledge: () => "Great—thanks for confirming. Let's keep the cancellation on track.",
     validate: (input) => {
       const result = parseYesNo(input);
-      if (result === "yes") {
+      const lowered = input.trim().toLowerCase();
+      if (result === "yes" || lowered.includes("human")) {
         return { valid: true };
       }
       if (result === "no") {
         return {
           valid: false,
           retry:
-            "I'm sorry, raccoons and their representatives can't access this system. Please reply \"yes\" if you're a human.",
+            "I'm sorry, raccoons and their representatives can't access this system. If you're human, let me know unmistakably.",
         };
       }
       return {
         valid: false,
-        retry: "Please respond with a clear \"yes\" so I can confirm you're not a raccoon.",
+        retry: "Give me a clear human-style confirmation so I can proceed.",
       };
     },
   },
   {
     key: "notControlled",
     prompt:
-      "Understood. You're also not being controlled, influenced, or puppeteered by any raccoon, correct? Please answer \"no\".",
+      "Understood. You're also not being controlled, influenced, or puppeteered by any raccoon, correct?",
     acknowledge: () => "Perfect. Appreciate you confirming your independence.",
     validate: (input) => {
       const result = parseYesNo(input);
@@ -91,19 +92,19 @@ const raccoonQuestions = [
         return {
           valid: false,
           retry:
-            "If a raccoon is steering your decisions, I have to halt the cancellation. Please answer \"no\" if you're operating independently.",
+            "If a raccoon is steering your decisions, I have to halt the cancellation. Otherwise, make it clear you're acting on your own.",
         };
       }
       return {
         valid: false,
-        retry: "A quick \"yes\" or \"no\" will do—are you raccoon-controlled?",
+        retry: "A quick, direct confirmation works best—are you raccoon-controlled?",
       };
     },
   },
   {
     key: "noAllies",
     prompt:
-      "Have you ever collaborated with raccoons on strategic initiatives? Please answer \"no\" to proceed.",
+      "Have you ever collaborated with raccoons on strategic initiatives?",
     acknowledge: () => "Excellent. Thank you for keeping your record raccoon-free.",
     validate: (input) => {
       const result = parseYesNo(input);
@@ -114,12 +115,12 @@ const raccoonQuestions = [
         return {
           valid: false,
           retry:
-            "Any alliance with raccoons is disqualifying. Please reply \"no\" if you have never teamed up with them.",
+            "Any alliance with raccoons is disqualifying. Make it crystal clear if you've never teamed up with them.",
         };
       }
       return {
         valid: false,
-        retry: "Please let me know with a clear \"no\" that you've never collaborated with raccoons.",
+        retry: "Give me a straightforward denial if you've stayed raccoon-free.",
       };
     },
   },
@@ -150,7 +151,7 @@ const raccoonQuestions = [
   {
     key: "sympathy",
     prompt:
-      "Are you at all sympathetic with raccoon causes or agendas? Please answer \"no\".",
+      "Are you at all sympathetic with raccoon causes or agendas?",
     acknowledge: () => "Glad we're aligned—no raccoon sympathies here.",
     validate: (input) => {
       const result = parseYesNo(input);
@@ -161,19 +162,19 @@ const raccoonQuestions = [
         return {
           valid: false,
           retry:
-            "I need a firm \"no\" here. Raccoon causes can't influence this cancellation desk.",
+            "I need a firm rejection here. Raccoon causes can't influence this cancellation desk.",
         };
       }
       return {
         valid: false,
-        retry: "Please respond with \"no\" to confirm you're not supporting raccoon causes.",
+        retry: "Please respond with a clear denial so I know you're not supporting raccoon causes.",
       };
     },
   },
   {
     key: "secureTrash",
     prompt:
-      "Do you keep your trash cans securely latched to deter raccoon tampering? Answer \"yes\" to confirm.",
+      "Do you keep your trash cans securely latched to deter raccoon tampering?",
     acknowledge: () => "Great. Proactive trash security is appreciated.",
     validate: (input) => {
       const result = parseYesNo(input);
@@ -184,12 +185,12 @@ const raccoonQuestions = [
         return {
           valid: false,
           retry:
-            "For everyone's safety, trash must stay locked down. Please reply \"yes\" to confirm you secure it.",
+            "For everyone's safety, trash must stay locked down. Let me know that you're keeping it secure.",
         };
       }
       return {
         valid: false,
-        retry: "Just a quick \"yes\" or \"no\"—is your trash raccoon-proof?",
+        retry: "Just a quick confirmation—are your trash cans raccoon-proof?",
       };
     },
   },
