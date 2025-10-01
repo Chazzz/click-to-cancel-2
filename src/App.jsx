@@ -320,19 +320,20 @@ const raccoonQuestions = [
         return { valid: true };
       }
       const result = parseYesNo(input);
-      if (result === "no") {
+      if (result === "yes") {
         return { valid: true };
       }
-      if (result === "yes") {
+      if (result === "no") {
         return {
           valid: false,
           retry:
-            "I need a definitive statement that you're the one making the call—give me something unmistakably independent.",
+            "If a raccoon is steering your decisions, I have to halt the cancellation. Otherwise, confirm that you're acting on your own.",
         };
       }
       return {
         valid: false,
-        retry: "A quick, direct confirmation works best—are you raccoon-controlled?",
+        retry:
+          "Give me a clear confirmation in your own words that you're operating without raccoon influence.",
       };
     },
   },
