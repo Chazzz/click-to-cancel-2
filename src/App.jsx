@@ -278,6 +278,36 @@ const closedChatResponse =
 
 const agentNames = ["Alex", "Jordan", "Taylor", "Morgan", "Riley", "Casey"];
 
+const challengeConfigs = {
+  verificationPhrase: {
+    type: "phrase",
+    phrase: "Humans handle cancellations solo.",
+  },
+  timedPhrase: {
+    type: "timed",
+    phrase: "Speed defeats sneaky raccoons.",
+    timeLimitMs: 9000,
+    expiredMessage:
+      "Too slow—remember, you only have nine seconds. Let's try that phrase again.",
+  },
+  trafficPhrase: {
+    type: "traffic",
+    phrase: "Green light means go, raccoons mean no.",
+    timeLimitMs: 12000,
+    cycleDurationMs: 2000,
+    expiredMessage:
+      "Timer expired during the light drill. Wait for green and send the exact phrase again.",
+    redLightMessage:
+      "Red light! Freeze and wait for green before submitting the phrase.",
+  },
+};
+
+const challengeTitles = {
+  phrase: "Exact Match Challenge",
+  timed: "Timed Match Challenge",
+  traffic: "Red Light / Green Light Challenge",
+};
+
 const getRandomAgentName = () => {
   const randomIndex = Math.floor(Math.random() * agentNames.length);
   return agentNames[randomIndex];
@@ -387,6 +417,20 @@ const raccoonQuestions = [
     },
   },
   {
+    key: "verificationPhrase",
+    prompt: `Security phrase check: type the following exactly as shown — "${challengeConfigs.verificationPhrase.phrase}"`,
+    acknowledge: () => "Flawless copy. Phrase recorded with zero raccoon interference.",
+    validate: (input) => {
+      if (input.trim() === challengeConfigs.verificationPhrase.phrase) {
+        return { valid: true };
+      }
+      return {
+        valid: false,
+        retry: `I need an exact match. Please type "${challengeConfigs.verificationPhrase.phrase}" word-for-word.`,
+      };
+    },
+  },
+  {
     key: "sympathy",
     prompt:
       "Are you at all sympathetic with raccoon causes or agendas?",
@@ -413,6 +457,22 @@ const raccoonQuestions = [
     },
   },
   {
+    key: "timedPhrase",
+    prompt: `Speed drill: you have ${Math.round(
+      challengeConfigs.timedPhrase.timeLimitMs / 1000
+    )} seconds to type "${challengeConfigs.timedPhrase.phrase}" exactly, then hit send.`,
+    acknowledge: () => "Nicely done—you beat the countdown without breaking a sweat.",
+    validate: (input) => {
+      if (input.trim() === challengeConfigs.timedPhrase.phrase) {
+        return { valid: true };
+      }
+      return {
+        valid: false,
+        retry: `Let's try again with a perfect copy of "${challengeConfigs.timedPhrase.phrase}".`,
+      };
+    },
+  },
+  {
     key: "secureTrash",
     prompt:
       "Do you keep your trash cans securely latched to deter raccoon tampering?",
@@ -432,6 +492,22 @@ const raccoonQuestions = [
       return {
         valid: false,
         retry: "Just a quick confirmation—are your trash cans raccoon-proof?",
+      };
+    },
+  },
+  {
+    key: "trafficPhrase",
+    prompt:
+      "Final reflex drill: watch the light below. While it's green, type \"Green light means go, raccoons mean no.\" before the timer hits zero. Freeze whenever it flashes red.",
+    acknowledge: () => "Perfect timing—green means go and this cancellation stays human-controlled.",
+    validate: (input) => {
+      if (input.trim() === challengeConfigs.trafficPhrase.phrase) {
+        return { valid: true };
+      }
+      return {
+        valid: false,
+        retry:
+          "The phrase needs to stay exact. Wait for green and try again with \"Green light means go, raccoons mean no.\"",
       };
     },
   },
@@ -529,10 +605,16 @@ export default function App() {
   const [mode, setMode] = useState(modes.questioning);
   const [currentQuestionIndex, setCurrentQuestionIndex] = useState(0);
   const [isAgentTyping, setIsAgentTyping] = useState(false);
+  const [activeChallenge, setActiveChallenge] = useState(null);
+  const [challengeCountdownMs, setChallengeCountdownMs] = useState(null);
+  const [challengeLight, setChallengeLight] = useState(null);
   const [agentName] = useState(() => getRandomAgentName());
   const endOfMessagesRef = useRef(null);
   const typingQueueRef = useRef([]);
   const hasInitializedRef = useRef(false);
+  const challengeResetTimeoutRef = useRef(null);
+  const challengeAnimationFrameRef = useRef(null);
+  const challengeIntervalRef = useRef(null);
 
   const baseInitialMessages = useMemo(
     () => createInitialMessages(agentName),
@@ -541,6 +623,34 @@ export default function App() {
 
   const pushMessages = useCallback((newMessages) => {
     setMessages((previous) => [...previous, ...newMessages]);
+  }, []);
+
+  const resetChallenge = useCallback((key, delayMs = 0) => {
+    const config = challengeConfigs[key];
+    if (!config) {
+      return;
+    }
+    if (challengeResetTimeoutRef.current) {
+      clearTimeout(challengeResetTimeoutRef.current);
+      challengeResetTimeoutRef.current = null;
+    }
+    const activate = () => {
+      const startedAt = performance.now();
+      setActiveChallenge({
+        key,
+        ...config,
+        startedAt,
+        instanceId: Math.random(),
+      });
+    };
+    if (delayMs > 0) {
+      challengeResetTimeoutRef.current = setTimeout(() => {
+        activate();
+        challengeResetTimeoutRef.current = null;
+      }, delayMs);
+    } else {
+      activate();
+    }
   }, []);
 
   const flushTypingQueue = useCallback(() => {
@@ -594,15 +704,31 @@ export default function App() {
       return undefined;
     }
     hasInitializedRef.current = true;
-    scheduleAgentReplies(baseInitialMessages);
+    const initialDelay = scheduleAgentReplies(baseInitialMessages);
+    const firstQuestion = raccoonQuestions[0];
+    if (firstQuestion && challengeConfigs[firstQuestion.key]) {
+      resetChallenge(firstQuestion.key, initialDelay + 60);
+    }
 
     return () => {
       typingQueueRef.current.forEach((entry) => {
         clearTimeout(entry.timeoutId);
       });
       typingQueueRef.current = [];
+      if (challengeResetTimeoutRef.current) {
+        clearTimeout(challengeResetTimeoutRef.current);
+        challengeResetTimeoutRef.current = null;
+      }
+      if (challengeAnimationFrameRef.current !== null) {
+        cancelAnimationFrame(challengeAnimationFrameRef.current);
+        challengeAnimationFrameRef.current = null;
+      }
+      if (challengeIntervalRef.current !== null) {
+        clearInterval(challengeIntervalRef.current);
+        challengeIntervalRef.current = null;
+      }
     };
-  }, [baseInitialMessages, scheduleAgentReplies]);
+  }, [baseInitialMessages, resetChallenge, scheduleAgentReplies]);
 
   const scrollToEnd = useCallback(() => {
     endOfMessagesRef.current?.scrollIntoView({ behavior: "smooth", block: "end" });
@@ -618,6 +744,74 @@ export default function App() {
     }
   }, [isAgentTyping, scrollToEnd]);
 
+  useEffect(() => {
+    if (mode !== modes.questioning) {
+      setActiveChallenge(null);
+      return;
+    }
+    const currentQuestion = raccoonQuestions[currentQuestionIndex];
+    if (!currentQuestion || !challengeConfigs[currentQuestion.key]) {
+      setActiveChallenge(null);
+    }
+  }, [currentQuestionIndex, mode]);
+
+  useEffect(() => {
+    if (challengeAnimationFrameRef.current !== null) {
+      cancelAnimationFrame(challengeAnimationFrameRef.current);
+      challengeAnimationFrameRef.current = null;
+    }
+    if (challengeIntervalRef.current !== null) {
+      clearInterval(challengeIntervalRef.current);
+      challengeIntervalRef.current = null;
+    }
+
+    if (!activeChallenge) {
+      setChallengeCountdownMs(null);
+      setChallengeLight(null);
+      return;
+    }
+
+    if (activeChallenge.timeLimitMs) {
+      const endTime = activeChallenge.startedAt + activeChallenge.timeLimitMs;
+      const updateCountdown = () => {
+        const remaining = Math.max(0, endTime - performance.now());
+        setChallengeCountdownMs(remaining);
+        if (remaining > 0) {
+          challengeAnimationFrameRef.current = requestAnimationFrame(updateCountdown);
+        } else {
+          challengeAnimationFrameRef.current = null;
+        }
+      };
+      updateCountdown();
+    } else {
+      setChallengeCountdownMs(null);
+    }
+
+    if (activeChallenge.type === "traffic") {
+      setChallengeLight("green");
+      let isGreen = true;
+      challengeIntervalRef.current = setInterval(() => {
+        isGreen = !isGreen;
+        setChallengeLight(isGreen ? "green" : "red");
+      }, activeChallenge.cycleDurationMs);
+    } else if (activeChallenge.type === "timed") {
+      setChallengeLight("green");
+    } else {
+      setChallengeLight(null);
+    }
+
+    return () => {
+      if (challengeAnimationFrameRef.current !== null) {
+        cancelAnimationFrame(challengeAnimationFrameRef.current);
+        challengeAnimationFrameRef.current = null;
+      }
+      if (challengeIntervalRef.current !== null) {
+        clearInterval(challengeIntervalRef.current);
+        challengeIntervalRef.current = null;
+      }
+    };
+  }, [activeChallenge]);
+
   const handleUserMessage = useCallback(
     (rawText) => {
       const trimmed = rawText.trim();
@@ -629,6 +823,9 @@ export default function App() {
 
       const userMessage = { role: "user", text: trimmed };
       const agentReplies = [];
+      let pendingChallengeKey = null;
+      let shouldResetChallengeTimer = false;
+      let shouldClearChallenge = false;
 
       if (mode === modes.completed) {
         agentReplies.push({ role: "agent", text: closedChatResponse });
@@ -641,7 +838,38 @@ export default function App() {
           });
           setMode(modes.completed);
         } else {
-          const result = question.validate(trimmed);
+          const challengeConfig = challengeConfigs[question.key];
+          let result = question.validate(trimmed);
+          if (result.valid && challengeConfig) {
+            if (
+              challengeConfig.timeLimitMs &&
+              activeChallenge?.key === question.key
+            ) {
+              const elapsed = performance.now() - activeChallenge.startedAt;
+              if (elapsed > challengeConfig.timeLimitMs) {
+                result = {
+                  valid: false,
+                  retry: challengeConfig.expiredMessage,
+                };
+                shouldResetChallengeTimer = true;
+              }
+            }
+            if (
+              result.valid &&
+              challengeConfig.type === "traffic" &&
+              challengeConfig.redLightMessage &&
+              challengeLight === "red"
+            ) {
+              result = {
+                valid: false,
+                retry: challengeConfig.redLightMessage,
+              };
+              shouldResetChallengeTimer = true;
+            }
+          }
+          if (!result.valid && challengeConfig?.timeLimitMs) {
+            shouldResetChallengeTimer = true;
+          }
           if (!result.valid) {
             agentReplies.push({ role: "agent", text: result.retry });
             agentReplies.push({ role: "agent", text: question.prompt });
@@ -653,7 +881,11 @@ export default function App() {
             const nextIndex = currentQuestionIndex + 1;
             setCurrentQuestionIndex(nextIndex);
             if (nextIndex < raccoonQuestions.length) {
-              agentReplies.push({ role: "agent", text: raccoonQuestions[nextIndex].prompt });
+              const nextQuestion = raccoonQuestions[nextIndex];
+              agentReplies.push({ role: "agent", text: nextQuestion.prompt });
+              if (challengeConfigs[nextQuestion.key]) {
+                pendingChallengeKey = nextQuestion.key;
+              }
             } else {
               agentReplies.push(
                 {
@@ -671,18 +903,36 @@ export default function App() {
               );
               setMode(modes.completed);
             }
+            if (challengeConfig) {
+              shouldClearChallenge = true;
+            }
           }
         }
       }
 
       pushMessages([userMessage]);
-      scheduleAgentReplies(agentReplies);
+      const lastDelay = scheduleAgentReplies(agentReplies);
+      if (shouldClearChallenge) {
+        setActiveChallenge(null);
+      }
+      if (shouldResetChallengeTimer && challengeConfigs[raccoonQuestions[currentQuestionIndex]?.key]) {
+        resetChallenge(
+          raccoonQuestions[currentQuestionIndex].key,
+          (lastDelay ?? 0) + 80
+        );
+      }
+      if (pendingChallengeKey) {
+        resetChallenge(pendingChallengeKey, (lastDelay ?? 0) + 80);
+      }
     },
     [
+      activeChallenge,
+      challengeLight,
       currentQuestionIndex,
       flushTypingQueue,
       mode,
       pushMessages,
+      resetChallenge,
       scheduleAgentReplies,
     ]
   );
@@ -715,12 +965,65 @@ export default function App() {
     [handleUserMessage, input]
   );
 
+  const countdownSeconds =
+    activeChallenge && activeChallenge.timeLimitMs
+      ? Math.max(
+          0,
+          Math.ceil(
+            (challengeCountdownMs ?? activeChallenge.timeLimitMs) / 1000
+          )
+        )
+      : null;
+
+  const challengeSectionClassName = activeChallenge
+    ? [
+        "challenge",
+        `challenge--${activeChallenge.type}`,
+        challengeLight ? `challenge--light-${challengeLight}` : null,
+      ]
+        .filter(Boolean)
+        .join(" ")
+    : "";
+
+  const formClassName = `input${
+    challengeLight ? ` input--${challengeLight}` : ""
+  }`;
+
   return (
     <div className="app">
       <header className="app__header">
         <h1>Cancellation Assistant</h1>
         <p className="app__subtitle">The most efficient way to cancel, guaranteed.</p>
       </header>
+      {activeChallenge && (
+        <section className={challengeSectionClassName} aria-live="polite">
+          <div className="challenge__header">
+            <span className="challenge__badge">Verification challenge</span>
+            <h2 className="challenge__title">
+              {challengeTitles[activeChallenge.type] ?? "Verification Challenge"}
+            </h2>
+          </div>
+          <p className="challenge__instruction">Type the phrase exactly as shown:</p>
+          <p className="challenge__phrase">
+            <code>{activeChallenge.phrase}</code>
+          </p>
+          {typeof countdownSeconds === "number" && (
+            <p className="challenge__timer" role="status">
+              Time remaining: <strong>{countdownSeconds}</strong>s
+            </p>
+          )}
+          {activeChallenge.type === "traffic" && challengeLight && (
+            <p className="challenge__light-indicator" role="status">
+              Light status:
+              <span className={`challenge__light challenge__light--${challengeLight}`}>
+                {challengeLight === "green"
+                  ? "GREEN — type now!"
+                  : "RED — pause typing!"}
+              </span>
+            </p>
+          )}
+        </section>
+      )}
       <main className="chat" aria-live="polite">
         <ul className="chat__messages">
           {messages.map((message, index) => (
@@ -743,7 +1046,7 @@ export default function App() {
           <li ref={endOfMessagesRef} />
         </ul>
       </main>
-      <form className="input" onSubmit={handleSubmit}>
+      <form className={formClassName} onSubmit={handleSubmit}>
         <label htmlFor="chat-input" className="sr-only">
           Type your response
         </label>
