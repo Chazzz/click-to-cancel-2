@@ -1031,8 +1031,26 @@ export default function App() {
     challengeLight ? ` input--${challengeLight}` : ""
   }`;
 
+  useEffect(() => {
+    if (challengeLight) {
+      document.body.dataset.challengeLight = challengeLight;
+    } else {
+      delete document.body.dataset.challengeLight;
+    }
+    return () => {
+      delete document.body.dataset.challengeLight;
+    };
+  }, [challengeLight]);
+
+  const appClassName = [
+    "app",
+    challengeLight ? `app--light-${challengeLight}` : null,
+  ]
+    .filter(Boolean)
+    .join(" ");
+
   return (
-    <div className="app">
+    <div className={appClassName}>
       <header className="app__header">
         <h1>Cancellation Assistant</h1>
         <p className="app__subtitle">The most efficient way to cancel, guaranteed.</p>
