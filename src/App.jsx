@@ -297,8 +297,9 @@ const challengeConfigs = {
   trafficPhrase: {
     type: "traffic",
     phrase: "Green light means go, raccoons mean no.",
-    timeLimitMs: 12000,
-    cycleDurationMs: 8000,
+    timeLimitMs: 24000,
+    cycleDurationMs: 4000,
+    cycleJitterMs: 1200,
     expiredMessage:
       "Timer expired during the light drill. Wait for green and send the exact phrase again.",
     redLightMessage:
@@ -756,7 +757,7 @@ export default function App() {
         challengeAnimationFrameRef.current = null;
       }
       if (challengeIntervalRef.current !== null) {
-        clearInterval(challengeIntervalRef.current);
+        clearTimeout(challengeIntervalRef.current);
         challengeIntervalRef.current = null;
       }
     };
@@ -793,7 +794,7 @@ export default function App() {
       challengeAnimationFrameRef.current = null;
     }
     if (challengeIntervalRef.current !== null) {
-      clearInterval(challengeIntervalRef.current);
+      clearTimeout(challengeIntervalRef.current);
       challengeIntervalRef.current = null;
     }
 
@@ -841,7 +842,7 @@ export default function App() {
       );
     } else if (activeChallenge.type === "traffic") {
       baseMessages.push(
-        `Traffic-light drill engaged. Type "${activeChallenge.phrase}" exactly, but only send during green. You've got ${totalSeconds} seconds total and I'll call out the light changes.`
+        `Traffic-light drill engaged. Type "${activeChallenge.phrase}" exactly, but only send during green. You've got ${totalSeconds} seconds total, and the lights will flip roughly every four seconds with a little randomness. I'll call out the changes.`
       );
     }
     queueAgentMessages(baseMessages);
@@ -905,7 +906,7 @@ export default function App() {
                 ) ?? 0;
             }
             if (challengeIntervalRef.current !== null) {
-              clearInterval(challengeIntervalRef.current);
+              clearTimeout(challengeIntervalRef.current);
               challengeIntervalRef.current = null;
             }
             const challengeKey = activeChallenge.key;
@@ -930,12 +931,26 @@ export default function App() {
     }
 
     if (activeChallenge.type === "traffic") {
+      const baseDuration = activeChallenge.cycleDurationMs ?? 4000;
+      const jitter = Math.max(0, activeChallenge.cycleJitterMs ?? 0);
+      const minDuration = Math.max(500, baseDuration - jitter);
+      const maxDuration = baseDuration + jitter;
+      const pickDuration = () =>
+        jitter > 0
+          ? Math.round(minDuration + Math.random() * (maxDuration - minDuration))
+          : baseDuration;
+
       setChallengeLight("green");
       let isGreen = true;
-      challengeIntervalRef.current = setInterval(() => {
-        isGreen = !isGreen;
-        setChallengeLight(isGreen ? "green" : "red");
-      }, activeChallenge.cycleDurationMs);
+      const queueNextSwitch = () => {
+        challengeIntervalRef.current = setTimeout(() => {
+          isGreen = !isGreen;
+          setChallengeLight(isGreen ? "green" : "red");
+          queueNextSwitch();
+        }, pickDuration());
+      };
+
+      queueNextSwitch();
     } else {
       setChallengeLight(null);
     }
@@ -946,7 +961,7 @@ export default function App() {
         challengeAnimationFrameRef.current = null;
       }
       if (challengeIntervalRef.current !== null) {
-        clearInterval(challengeIntervalRef.current);
+        clearTimeout(challengeIntervalRef.current);
         challengeIntervalRef.current = null;
       }
     };
