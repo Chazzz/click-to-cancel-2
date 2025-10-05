@@ -308,12 +308,6 @@ const challengeConfigs = {
   },
 };
 
-const challengeTitles = {
-  phrase: "Exact Match Challenge",
-  timed: "Timed Match Challenge",
-  traffic: "Red Light / Green Light Challenge",
-};
-
 const getRandomAgentName = () => {
   const randomIndex = Math.floor(Math.random() * agentNames.length);
   return agentNames[randomIndex];
@@ -622,6 +616,12 @@ export default function App() {
   const challengeAnimationFrameRef = useRef(null);
   const challengeIntervalRef = useRef(null);
   const pasteAttemptRef = useRef({ handled: true });
+  const challengeAnnouncementRef = useRef({
+    instanceId: null,
+    countdownAnnouncements: new Set(),
+    countdownThresholds: [],
+    lastLight: null,
+  });
 
   const baseInitialMessages = useMemo(
     () => createInitialMessages(agentName),
@@ -707,6 +707,27 @@ export default function App() {
     [pushMessages]
   );
 
+  const queueAgentMessages = useCallback(
+    (messagesToQueue) => {
+      if (!messagesToQueue.length) {
+        return;
+      }
+      scheduleAgentReplies(
+        messagesToQueue.map((message) =>
+          typeof message === "string" ? { role: "agent", text: message } : message
+        )
+      );
+    },
+    [scheduleAgentReplies]
+  );
+
+  const queueAgentMessage = useCallback(
+    (text) => {
+      queueAgentMessages([text]);
+    },
+    [queueAgentMessages]
+  );
+
   useEffect(() => {
     if (hasInitializedRef.current) {
       return undefined;
@@ -776,14 +797,76 @@ export default function App() {
     if (!activeChallenge) {
       setChallengeCountdownMs(null);
       setChallengeLight(null);
+      challengeAnnouncementRef.current = {
+        instanceId: null,
+        countdownAnnouncements: new Set(),
+        countdownThresholds: [],
+        lastLight: null,
+      };
       return;
     }
+
+    const totalSeconds = activeChallenge.timeLimitMs
+      ? Math.ceil(activeChallenge.timeLimitMs / 1000)
+      : null;
+    const countdownThresholds = activeChallenge.timeLimitMs
+      ? [5, 3, 1].filter((threshold) => threshold < totalSeconds)
+      : [];
+
+    challengeAnnouncementRef.current = {
+      instanceId: activeChallenge.instanceId,
+      countdownAnnouncements: new Set(),
+      countdownThresholds,
+      lastLight: null,
+    };
+
+    const baseMessages = [];
+    if (activeChallenge.type === "phrase") {
+      baseMessages.push(
+        `I'll watch for an exact match of "${activeChallenge.phrase}"—type it perfectly when you're ready.`
+      );
+    } else if (activeChallenge.type === "timed") {
+      baseMessages.push(
+        `Timed security check! You've got ${totalSeconds} seconds to type "${activeChallenge.phrase}" perfectly. I'll warn you as the clock winds down.`
+      );
+    } else if (activeChallenge.type === "traffic") {
+      baseMessages.push(
+        `Traffic-light drill engaged. Type "${activeChallenge.phrase}" exactly, but only send during green. You've got ${totalSeconds} seconds total and I'll call out the light changes.`
+      );
+    }
+    queueAgentMessages(baseMessages);
 
     if (activeChallenge.timeLimitMs) {
       const endTime = activeChallenge.startedAt + activeChallenge.timeLimitMs;
       const updateCountdown = () => {
         const remaining = Math.max(0, endTime - performance.now());
         setChallengeCountdownMs(remaining);
+
+        const announcementState = challengeAnnouncementRef.current;
+        if (
+          announcementState.instanceId === activeChallenge.instanceId &&
+          announcementState.countdownThresholds.length
+        ) {
+          const secondsRemaining = Math.ceil(remaining / 1000);
+          announcementState.countdownThresholds.forEach((threshold) => {
+            if (
+              secondsRemaining <= threshold &&
+              !announcementState.countdownAnnouncements.has(threshold)
+            ) {
+              announcementState.countdownAnnouncements.add(threshold);
+              if (threshold === 1) {
+                queueAgentMessage(
+                  "One second left—hit send if you've got the phrase ready!"
+                );
+              } else if (threshold === 3) {
+                queueAgentMessage("Three-second warning—almost out of time.");
+              } else if (threshold === 5) {
+                queueAgentMessage("Five seconds remaining—stay sharp.");
+              }
+            }
+          });
+        }
+
         if (remaining > 0) {
           challengeAnimationFrameRef.current = requestAnimationFrame(updateCountdown);
         } else {
@@ -818,7 +901,35 @@ export default function App() {
         challengeIntervalRef.current = null;
       }
     };
-  }, [activeChallenge]);
+  }, [activeChallenge, queueAgentMessage, queueAgentMessages]);
+
+  useEffect(() => {
+    if (!activeChallenge || activeChallenge.type !== "traffic") {
+      return;
+    }
+    const announcementState = challengeAnnouncementRef.current;
+    if (
+      !announcementState ||
+      announcementState.instanceId !== activeChallenge.instanceId ||
+      !challengeLight
+    ) {
+      return;
+    }
+
+    if (announcementState.lastLight === challengeLight) {
+      return;
+    }
+
+    announcementState.lastLight = challengeLight;
+
+    if (challengeLight === "green") {
+      queueAgentMessage(
+        "Green light! You're clear to type and send the phrase."
+      );
+    } else if (challengeLight === "red") {
+      queueAgentMessage("Red light—pause typing and wait for green.");
+    }
+  }, [activeChallenge, challengeLight, queueAgentMessage]);
 
   const handleUserMessage = useCallback(
     (rawText) => {
@@ -1007,26 +1118,6 @@ export default function App() {
     };
   }, [activeChallenge, currentQuestionIndex]);
 
-  const countdownSeconds =
-    activeChallenge && activeChallenge.timeLimitMs
-      ? Math.max(
-          0,
-          Math.ceil(
-            (challengeCountdownMs ?? activeChallenge.timeLimitMs) / 1000
-          )
-        )
-      : null;
-
-  const challengeSectionClassName = activeChallenge
-    ? [
-        "challenge",
-        `challenge--${activeChallenge.type}`,
-        challengeLight ? `challenge--light-${challengeLight}` : null,
-      ]
-        .filter(Boolean)
-        .join(" ")
-    : "";
-
   const formClassName = `input${
     challengeLight ? ` input--${challengeLight}` : ""
   }`;
@@ -1055,35 +1146,6 @@ export default function App() {
         <h1>Cancellation Assistant</h1>
         <p className="app__subtitle">The most efficient way to cancel, guaranteed.</p>
       </header>
-      {activeChallenge && (
-        <section className={challengeSectionClassName} aria-live="polite">
-          <div className="challenge__header">
-            <span className="challenge__badge">Verification challenge</span>
-            <h2 className="challenge__title">
-              {challengeTitles[activeChallenge.type] ?? "Verification Challenge"}
-            </h2>
-          </div>
-          <p className="challenge__instruction">Type the phrase exactly as shown:</p>
-          <p className="challenge__phrase">
-            <code>{activeChallenge.phrase}</code>
-          </p>
-          {typeof countdownSeconds === "number" && (
-            <p className="challenge__timer" role="status">
-              Time remaining: <strong>{countdownSeconds}</strong>s
-            </p>
-          )}
-          {activeChallenge.type === "traffic" && challengeLight && (
-            <p className="challenge__light-indicator" role="status">
-              Light status:
-              <span className={`challenge__light challenge__light--${challengeLight}`}>
-                {challengeLight === "green"
-                  ? "GREEN — type now!"
-                  : "RED — pause typing!"}
-              </span>
-            </p>
-          )}
-        </section>
-      )}
       <main className="chat" aria-live="polite">
         <ul className="chat__messages">
           {messages.map((message, index) => (
