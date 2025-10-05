@@ -885,8 +885,6 @@ export default function App() {
         isGreen = !isGreen;
         setChallengeLight(isGreen ? "green" : "red");
       }, activeChallenge.cycleDurationMs);
-    } else if (activeChallenge.type === "timed") {
-      setChallengeLight("green");
     } else {
       setChallengeLight(null);
     }
