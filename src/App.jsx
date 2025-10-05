@@ -298,7 +298,7 @@ const challengeConfigs = {
     type: "traffic",
     phrase: "Green light means go, raccoons mean no.",
     timeLimitMs: 12000,
-    cycleDurationMs: 2000,
+    cycleDurationMs: 4000,
     expiredMessage:
       "Timer expired during the light drill. Wait for green and send the exact phrase again.",
     redLightMessage:
@@ -621,6 +621,7 @@ export default function App() {
     countdownAnnouncements: new Set(),
     countdownThresholds: [],
     lastLight: null,
+    expiredNotified: false,
   });
 
   const baseInitialMessages = useMemo(
@@ -802,6 +803,7 @@ export default function App() {
         countdownAnnouncements: new Set(),
         countdownThresholds: [],
         lastLight: null,
+        expiredNotified: false,
       };
       return;
     }
@@ -818,6 +820,7 @@ export default function App() {
       countdownAnnouncements: new Set(),
       countdownThresholds,
       lastLight: null,
+      expiredNotified: false,
     };
 
     const baseMessages = [];
@@ -871,6 +874,47 @@ export default function App() {
           challengeAnimationFrameRef.current = requestAnimationFrame(updateCountdown);
         } else {
           challengeAnimationFrameRef.current = null;
+          if (
+            announcementState.instanceId === activeChallenge.instanceId &&
+            !announcementState.expiredNotified
+          ) {
+            announcementState.expiredNotified = true;
+            const challengeConfig = challengeConfigs[activeChallenge.key];
+            const question = raccoonQuestions.find(
+              (item) => item.key === activeChallenge.key
+            );
+            const followUps = [];
+            if (challengeConfig?.expiredMessage) {
+              followUps.push(challengeConfig.expiredMessage);
+            }
+            if (question?.prompt) {
+              followUps.push(question.prompt);
+            }
+            let followUpDelay = 0;
+            if (followUps.length) {
+              followUpDelay =
+                scheduleAgentReplies(
+                  followUps.map((text) => ({ role: "agent", text }))
+                ) ?? 0;
+            }
+            if (challengeIntervalRef.current !== null) {
+              clearInterval(challengeIntervalRef.current);
+              challengeIntervalRef.current = null;
+            }
+            const challengeKey = activeChallenge.key;
+            const canRestart =
+              mode === modes.questioning &&
+              raccoonQuestions[currentQuestionIndex]?.key === challengeKey;
+            setChallengeLight(null);
+            setActiveChallenge((previous) =>
+              previous && previous.instanceId === activeChallenge.instanceId
+                ? null
+                : previous
+            );
+            if (canRestart) {
+              resetChallenge(challengeKey, followUpDelay + 160);
+            }
+          }
         }
       };
       updateCountdown();
@@ -899,7 +943,15 @@ export default function App() {
         challengeIntervalRef.current = null;
       }
     };
-  }, [activeChallenge, queueAgentMessage, queueAgentMessages]);
+  }, [
+    activeChallenge,
+    currentQuestionIndex,
+    mode,
+    queueAgentMessage,
+    queueAgentMessages,
+    resetChallenge,
+    scheduleAgentReplies,
+  ]);
 
   useEffect(() => {
     if (!activeChallenge || activeChallenge.type !== "traffic") {
