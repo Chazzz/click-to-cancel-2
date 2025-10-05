@@ -298,7 +298,7 @@ const challengeConfigs = {
     type: "traffic",
     phrase: "Green light means go, raccoons mean no.",
     timeLimitMs: 12000,
-    cycleDurationMs: 4000,
+    cycleDurationMs: 8000,
     expiredMessage:
       "Timer expired during the light drill. Wait for green and send the exact phrase again.",
     redLightMessage:
@@ -623,6 +623,8 @@ export default function App() {
     lastLight: null,
     expiredNotified: false,
   });
+  const lastAllowedInputRef = useRef("");
+  const redLightViolationRef = useRef({ instanceId: null, light: null });
 
   const baseInitialMessages = useMemo(
     () => createInitialMessages(agentName),
@@ -805,6 +807,7 @@ export default function App() {
         lastLight: null,
         expiredNotified: false,
       };
+      redLightViolationRef.current = { instanceId: null, light: null };
       return;
     }
 
@@ -821,6 +824,10 @@ export default function App() {
       countdownThresholds,
       lastLight: null,
       expiredNotified: false,
+    };
+    redLightViolationRef.current = {
+      instanceId: activeChallenge.instanceId,
+      light: null,
     };
 
     const baseMessages = [];
@@ -981,6 +988,87 @@ export default function App() {
     }
   }, [activeChallenge, challengeLight, queueAgentMessage]);
 
+  useEffect(() => {
+    if (
+      !activeChallenge ||
+      activeChallenge.type !== "traffic" ||
+      !challengeLight
+    ) {
+      return;
+    }
+    if (challengeLight === "green") {
+      redLightViolationRef.current = {
+        instanceId: activeChallenge.instanceId,
+        light: "green",
+      };
+    }
+  }, [activeChallenge, challengeLight]);
+
+  const handleTrafficRedViolation = useCallback(() => {
+    if (
+      !activeChallenge ||
+      activeChallenge.type !== "traffic" ||
+      challengeLight !== "red"
+    ) {
+      return;
+    }
+    const announcementState = challengeAnnouncementRef.current;
+    if (
+      !announcementState ||
+      announcementState.instanceId !== activeChallenge.instanceId
+    ) {
+      return;
+    }
+    const violationState = redLightViolationRef.current;
+    if (
+      violationState.instanceId === activeChallenge.instanceId &&
+      violationState.light === "red"
+    ) {
+      return;
+    }
+    redLightViolationRef.current = {
+      instanceId: activeChallenge.instanceId,
+      light: "red",
+    };
+    const challengeConfig = challengeConfigs[activeChallenge.key];
+    const question = raccoonQuestions.find(
+      (item) => item.key === activeChallenge.key
+    );
+    const followUps = [];
+    if (challengeConfig?.redLightMessage) {
+      followUps.push(challengeConfig.redLightMessage);
+    }
+    followUps.push(
+      "Typing during red triggered an automatic reset. Wait for green before trying again."
+    );
+    if (question?.prompt) {
+      followUps.push(question.prompt);
+    }
+    const followUpDelay =
+      scheduleAgentReplies(
+        followUps.map((text) => ({ role: "agent", text }))
+      ) ?? 0;
+    setChallengeLight(null);
+    setActiveChallenge((previous) =>
+      previous && previous.instanceId === activeChallenge.instanceId
+        ? null
+        : previous
+    );
+    if (
+      mode === modes.questioning &&
+      raccoonQuestions[currentQuestionIndex]?.key === activeChallenge.key
+    ) {
+      resetChallenge(activeChallenge.key, followUpDelay + 160);
+    }
+  }, [
+    activeChallenge,
+    challengeLight,
+    currentQuestionIndex,
+    mode,
+    resetChallenge,
+    scheduleAgentReplies,
+  ]);
+
   const handleUserMessage = useCallback(
     (rawText) => {
       const trimmed = rawText.trim();
@@ -1130,6 +1218,24 @@ export default function App() {
     ]
   );
 
+  const handleInputChange = useCallback(
+    (event) => {
+      const nextValue = event.target.value;
+      if (
+        activeChallenge?.type === "traffic" &&
+        challengeLight === "red" &&
+        challengeAnnouncementRef.current?.instanceId ===
+          activeChallenge.instanceId
+      ) {
+        setInput(lastAllowedInputRef.current);
+        handleTrafficRedViolation();
+        return;
+      }
+      setInput(nextValue);
+    },
+    [activeChallenge, challengeLight, handleTrafficRedViolation]
+  );
+
   const handleSubmit = useCallback(
     (event) => {
       event.preventDefault();
@@ -1167,6 +1273,10 @@ export default function App() {
       timestamp: performance.now(),
     };
   }, [activeChallenge, currentQuestionIndex]);
+
+  useEffect(() => {
+    lastAllowedInputRef.current = input;
+  }, [input]);
 
   const formClassName = `input${
     challengeLight ? ` input--${challengeLight}` : ""
@@ -1226,7 +1336,7 @@ export default function App() {
           id="chat-input"
           rows={2}
           value={input}
-          onChange={(event) => setInput(event.target.value)}
+          onChange={handleInputChange}
           onKeyDown={handleKeyDown}
           onPaste={handlePaste}
           placeholder="Type your response here"
