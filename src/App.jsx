@@ -282,6 +282,8 @@ const challengeConfigs = {
   verificationPhrase: {
     type: "phrase",
     phrase: "Humans handle cancellations solo.",
+    pasteMessage:
+      "No pasting allowed—I need you to type \"Humans handle cancellations solo.\" exactly as shown.",
   },
   timedPhrase: {
     type: "timed",
@@ -289,6 +291,8 @@ const challengeConfigs = {
     timeLimitMs: 9000,
     expiredMessage:
       "Too slow—remember, you only have nine seconds. Let's try that phrase again.",
+    pasteMessage:
+      "Quick pastes don't count. Type \"Speed defeats sneaky raccoons.\" within the time limit.",
   },
   trafficPhrase: {
     type: "traffic",
@@ -299,6 +303,8 @@ const challengeConfigs = {
       "Timer expired during the light drill. Wait for green and send the exact phrase again.",
     redLightMessage:
       "Red light! Freeze and wait for green before submitting the phrase.",
+    pasteMessage:
+      "I spotted a paste during the light drill—wait for green and type it out manually.",
   },
 };
 
@@ -615,6 +621,7 @@ export default function App() {
   const challengeResetTimeoutRef = useRef(null);
   const challengeAnimationFrameRef = useRef(null);
   const challengeIntervalRef = useRef(null);
+  const pasteAttemptRef = useRef({ handled: true });
 
   const baseInitialMessages = useMemo(
     () => createInitialMessages(agentName),
@@ -635,6 +642,7 @@ export default function App() {
       challengeResetTimeoutRef.current = null;
     }
     const activate = () => {
+      pasteAttemptRef.current = { handled: true };
       const startedAt = performance.now();
       setActiveChallenge({
         key,
@@ -840,6 +848,29 @@ export default function App() {
         } else {
           const challengeConfig = challengeConfigs[question.key];
           let result = question.validate(trimmed);
+          if (challengeConfig) {
+            const pasteAttempt = pasteAttemptRef.current;
+            const challengeInstanceId = activeChallenge?.instanceId ?? null;
+            const isPasteForCurrentChallenge =
+              pasteAttempt &&
+              !pasteAttempt.handled &&
+              pasteAttempt.questionKey === question.key &&
+              (pasteAttempt.challengeInstanceId == null ||
+                pasteAttempt.challengeInstanceId === challengeInstanceId);
+            if (isPasteForCurrentChallenge) {
+              result = {
+                valid: false,
+                retry:
+                  challengeConfig.pasteMessage ??
+                  "No pasting allowed for this checkpoint—type the phrase manually.",
+              };
+              pasteAttemptRef.current = {
+                ...pasteAttemptRef.current,
+                handled: true,
+              };
+              shouldResetChallengeTimer = true;
+            }
+          }
           if (result.valid && challengeConfig) {
             if (
               challengeConfig.timeLimitMs &&
@@ -914,6 +945,7 @@ export default function App() {
       const lastDelay = scheduleAgentReplies(agentReplies);
       if (shouldClearChallenge) {
         setActiveChallenge(null);
+        pasteAttemptRef.current = { handled: true };
       }
       if (shouldResetChallengeTimer && challengeConfigs[raccoonQuestions[currentQuestionIndex]?.key]) {
         resetChallenge(
@@ -964,6 +996,16 @@ export default function App() {
     },
     [handleUserMessage, input]
   );
+
+  const handlePaste = useCallback(() => {
+    const questionKey = raccoonQuestions[currentQuestionIndex]?.key ?? null;
+    pasteAttemptRef.current = {
+      challengeInstanceId: activeChallenge?.instanceId ?? null,
+      questionKey,
+      handled: false,
+      timestamp: performance.now(),
+    };
+  }, [activeChallenge, currentQuestionIndex]);
 
   const countdownSeconds =
     activeChallenge && activeChallenge.timeLimitMs
@@ -1056,6 +1098,7 @@ export default function App() {
           value={input}
           onChange={(event) => setInput(event.target.value)}
           onKeyDown={handleKeyDown}
+          onPaste={handlePaste}
           placeholder="Type your response here"
         />
         <button type="submit" disabled={!input.trim()}>
